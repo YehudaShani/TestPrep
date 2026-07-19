@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+test_sample.pdf
+test_rot.pdf
+test_out/
+test_out_rot/
+Split/
+Unorganized tests/
+.claude/settings.local.json

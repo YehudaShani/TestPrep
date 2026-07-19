@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "study",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "pdf_splitter.study_server", "--port", "8766"],
+      "port": 8766,
+      "autoPort": false
+    }
+  ]
+}
