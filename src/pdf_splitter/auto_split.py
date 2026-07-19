@@ -614,6 +614,9 @@ def _build_interleaved_segments(
             else:
                 nums = [last_num + 1]
                 warnings = ["solution marker with no matching question header"]
+            if nxt and nxt[2] == "q" and nxt[0] != page:
+                # next question's page starts with that question's setup
+                end = (nxt[0], bounds[nxt[0]].top)
             slices = _span_slices((page, y), end, bounds)
             for n2 in nums:
                 segments.append(Segment("answer", n2, slices, list(warnings)))

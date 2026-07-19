@@ -7,6 +7,13 @@
       "runtimeArgs": ["-m", "pdf_splitter.study_server", "--port", "8766"],
       "port": 8766,
       "autoPort": false
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "http.server", "8767", "--directory", "site"],
+      "port": 8767,
+      "autoPort": false
     }
   ]
 }

@@ -10,4 +10,5 @@ test_out/
 test_out_rot/
 Split/
 Unorganized tests/
+site/
 .claude/settings.local.json
