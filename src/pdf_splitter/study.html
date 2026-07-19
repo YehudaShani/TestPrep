@@ -56,6 +56,11 @@
   }
   #marks button.active-done { background: var(--answer); color: var(--accent-text); }
   #marks button.active-flag { background: var(--flag); color: var(--accent-text); }
+  #btn-share {
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
+    font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
+  }
+  #btn-share.copied { background: var(--answer); color: var(--accent-text); border-color: var(--answer); }
   .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
   main { flex: 1; display: flex; min-height: 0; }
   nav {
@@ -111,6 +116,7 @@
     <button id="btn-done" title="mark as answered (D)">✓ Done</button>
     <button id="btn-flag" title="flag as difficult (F)">⚑ Hard</button>
   </span>
+  <button id="btn-share" title="copy a link to this question">🔗 Share</button>
   <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard</span>
 </header>
 <main>
@@ -241,7 +247,24 @@ function show() {
   if (other === "q" || hasAnswer(exam, state.n)) {
     new Image().src = renderUrl(exam, other, state.n);
   }
+  history.replaceState(null, "",
+    "#" + encodeURIComponent(state.exam) + "/" + state.n + "/" + state.mode);
   refreshMarks();
+}
+
+// Deep link: #<exam-dir>/<question>[/<q|a>], kept in sync by show().
+function applyHash() {
+  const m = /^#([^/]+)\/(\d+)(?:\/(q|a))?$/.exec(location.hash);
+  if (!m) return false;
+  const dir = decodeURIComponent(m[1]);
+  const exam = exams.find((e) => e.dir === dir);
+  const n = Number(m[2]);
+  if (!exam || !exam.questions.includes(n)) return false;
+  state.exam = dir;
+  $("exam-select").value = dir;
+  buildGrid();
+  selectQuestion(n, m[3] === "a" && hasAnswer(exam, n) ? "a" : "q");
+  return true;
 }
 
 function selectQuestion(n, mode) {
@@ -299,6 +322,35 @@ $("btn-flag").onclick = (e) => { toggleFlag(); e.currentTarget.blur(); };
 $("prev-btn").onclick = (e) => { step(-1); e.currentTarget.blur(); };
 $("next-btn").onclick = (e) => { step(1); e.currentTarget.blur(); };
 $("exam-select").onchange = (e) => { selectExam(e.target.value); e.target.blur(); };
+function copyToClipboard(text) {
+  const viaCommand = () => new Promise((resolve, reject) => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    ok ? resolve() : reject(new Error("copy failed"));
+  });
+  return navigator.clipboard
+    ? navigator.clipboard.writeText(text).catch(viaCommand)
+    : viaCommand();
+}
+
+$("btn-share").onclick = (e) => {
+  const btn = e.currentTarget;
+  copyToClipboard(location.href)
+    .then(() => { btn.textContent = "✓ Copied!"; btn.classList.add("copied"); })
+    .catch(() => { btn.textContent = "Copy failed"; })
+    .then(() => setTimeout(() => {
+      btn.textContent = "🔗 Share";
+      btn.classList.remove("copied");
+    }, 1500));
+  btn.blur();
+};
+window.addEventListener("hashchange", applyHash);
 
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -330,8 +382,10 @@ Promise.all(
       opt.textContent = e.label + " (" + e.questions.length + " questions)";
       sel.appendChild(opt);
     }
-    if (exams.length) selectExam(exams[0].dir);
-    else $("status").textContent = "No split exams found in the Split directory.";
+    if (!applyHash()) {
+      if (exams.length) selectExam(exams[0].dir);
+      else $("status").textContent = "No split exams found in the Split directory.";
+    }
   });
 </script>
 </body>
