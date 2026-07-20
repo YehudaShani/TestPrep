@@ -18,7 +18,7 @@ from pathlib import Path
 
 import fitz
 
-from .study_server import scan_exams
+from .study_server import expand_indexed_images, scan_exams
 
 STATIC_FLAG = "window.STATIC_SITE = false;"
 
@@ -29,6 +29,7 @@ def render_pdf(pdf_path: Path, png_path: Path, dpi: int) -> bool:
         return False
     doc = fitz.open(pdf_path)
     try:
+        expand_indexed_images(doc)
         png = doc[0].get_pixmap(dpi=dpi).tobytes("png")
     finally:
         doc.close()

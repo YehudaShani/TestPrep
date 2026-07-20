@@ -20,6 +20,8 @@ import fitz
 
 RENDER_DPI = 130
 YEAR_RE = re.compile(r"(20\d\d)")
+# [ /Indexed <base> <hival> <lookup stream ref> ] — capture hival + lookup xref
+INDEXED_CS_RE = re.compile(r"/Indexed\s.*?\s(\d+)\s+(\d+)\s+0\s+R\s*\]\s*$", re.DOTALL)
 SEASON_RE = re.compile(r"spring|winter", re.IGNORECASE)
 MOED_RE = re.compile(r"moed[_ ]?([ab])", re.IGNORECASE)
 SAFE_NAME_RE = re.compile(r"^[\w\-. ]+$")
@@ -69,6 +71,36 @@ def scan_exams(root: Path) -> list[dict]:
 
     exams.sort(key=sort_key)
     return exams
+
+
+def expand_indexed_images(doc: fitz.Document) -> None:
+    """Rewrite Indexed-colorspace images in place as plain RGB.
+
+    MuPDF misrenders the palette of Word-produced indexed images in some
+    2019-2021 Sol PDFs, painting solid black boxes over circuit labels.
+    Expanding the palette ourselves is lossless and sidesteps the bug.
+    """
+    for page in doc:
+        for img in page.get_images(full=True):
+            xref, bpc, cs = img[0], img[4], img[5]
+            if cs != "Indexed" or bpc != 8:
+                continue
+            cs_val = doc.xref_get_key(xref, "ColorSpace")[1]
+            m = INDEXED_CS_RE.search(cs_val)
+            if not m:
+                continue
+            hival, lookup_xref = int(m.group(1)), int(m.group(2))
+            palette = doc.xref_stream(lookup_xref)
+            data = doc.xref_stream(xref)  # filters decoded -> palette indices
+            w = int(doc.xref_get_key(xref, "Width")[1])
+            h = int(doc.xref_get_key(xref, "Height")[1])
+            # exactly 3 bytes per entry => an RGB-family base; skip anything else
+            if len(palette) != 3 * (hival + 1) or len(data) != w * h:
+                continue
+            rgb = bytes(c for i in data for c in palette[3 * i : 3 * i + 3])
+            doc.update_stream(xref, rgb)
+            doc.xref_set_key(xref, "ColorSpace", "/DeviceRGB")
+            doc.xref_set_key(xref, "Decode", "null")
 
 
 class StudyHandler(BaseHTTPRequestHandler):
@@ -144,6 +176,7 @@ class StudyHandler(BaseHTTPRequestHandler):
         if png is None:
             doc = fitz.open(pdf_path)
             try:
+                expand_indexed_images(doc)
                 pix = doc[0].get_pixmap(dpi=RENDER_DPI)
                 png = pix.tobytes("png")
             finally:
