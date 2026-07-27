@@ -16,6 +16,37 @@ python -m pdf_splitter.auto_split "Unorganized tests\2024\Sol_044105_Moed_A_Spri
 Files it cannot fully parse are reported (`no question headers found` /
 warnings in `index.json`); use the GUI to split those manually.
 
+## Physics 3 collection
+
+Physics 3 uses a different layout from the electrical-circuits exams. The
+collection includes exam/solution pairs, solution-only copies, broken RTL
+heading extraction, and combined pages where the worked solution follows the
+multiple-choice options. The Physics 3 batch command handles those cases,
+removes answer-color cues from question mode, and preserves the complete
+question/answer pairing:
+
+```bash
+python -m pdf_splitter.physics3 "physics 3 tests" --out Physics3Split
+```
+
+That preparation command is only needed when the source collection changes.
+Normal study sessions serve the already-separated questions and answers
+directly from `Physics3Split/`:
+
+```powershell
+.\serve-physics3.ps1
+```
+
+Then open <http://127.0.0.1:8765>. No splitting or site build runs when the
+viewer starts. Each exam folder contains `question_NN.pdf`, `answer_NN.pdf`,
+and `index.json`; `physics3-report.json` summarizes the full prepared
+collection.
+
+Use `.\serve-physics3.ps1 -Port 9000` if port 8765 is already occupied.
+
+The generated `Physics3Split/` directory is ignored by Git because it contains
+hundreds of derived PDFs.
+
 ## Requirements
 
 - Python 3.10+

@@ -4,6 +4,7 @@ Serves a single-page app over the Split directory: pick an exam, pick a
 question, and toggle between the question and its worked answer.
 
     python -m pdf_splitter.study_server [--root Split] [--port 8765]
+        [--title "Course name"] [--storage-key "course-progress"]
 """
 
 from __future__ import annotations
@@ -19,6 +20,10 @@ from urllib.parse import parse_qs, urlparse
 import fitz
 
 RENDER_DPI = 130
+CONFIG_FLAG = (
+    'window.STUDY_CONFIG = {"title":"Electrical Circuits",'
+    '"storageKey":"study-progress","assetVersion":""};'
+)
 YEAR_RE = re.compile(r"(20\d\d)")
 # [ /Indexed <base> <hival> <lookup stream ref> ] — capture hival + lookup xref
 INDEXED_CS_RE = re.compile(r"/Indexed\s.*?\s(\d+)\s+(\d+)\s+0\s+R\s*\]\s*$", re.DOTALL)
@@ -39,6 +44,13 @@ def exam_label(dirname: str) -> str:
 def scan_exams(root: Path) -> list[dict]:
     exams = []
     for d in sorted(p for p in root.iterdir() if p.is_dir()):
+        metadata = {}
+        index_path = d / "index.json"
+        if index_path.is_file():
+            try:
+                metadata = json.loads(index_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                metadata = {}
         questions = sorted(
             int(m.group(1))
             for f in d.glob("question_*.pdf")
@@ -54,7 +66,8 @@ def scan_exams(root: Path) -> list[dict]:
         exams.append(
             {
                 "dir": d.name,
-                "label": exam_label(d.name),
+                "label": metadata.get("label") or exam_label(d.name),
+                "course": metadata.get("course"),
                 "questions": questions,
                 "answers": sorted(answers),
             }
@@ -106,6 +119,8 @@ def expand_indexed_images(doc: fitz.Document) -> None:
 class StudyHandler(BaseHTTPRequestHandler):
     root: Path
     progress_path: Path
+    title = "Electrical Circuits"
+    storage_key = "study-progress"
     progress: dict[str, dict] = {}
     progress_lock = threading.Lock()
     render_cache: dict[str, bytes] = {}
@@ -157,8 +172,21 @@ class StudyHandler(BaseHTTPRequestHandler):
         self._send(200, "application/json", b'{"ok": true}')
 
     def _serve_page(self) -> None:
-        page = Path(__file__).with_name("study.html").read_bytes()
-        self._send(200, "text/html; charset=utf-8", page)
+        page = Path(__file__).with_name("study.html").read_text(encoding="utf-8")
+        if CONFIG_FLAG not in page:
+            self._send(500, "text/plain", b"study page configuration is missing")
+            return
+        config = json.dumps(
+            {
+                "title": self.title,
+                "storageKey": self.storage_key,
+                "assetVersion": "",
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        page = page.replace(CONFIG_FLAG, f"window.STUDY_CONFIG = {config};")
+        self._send(200, "text/html; charset=utf-8", page.encode("utf-8"))
 
     def _serve_render(self, params: dict) -> None:
         exam = params.get("exam", [""])[0]
@@ -201,6 +229,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default="Split", help="directory of split exams")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--title", default="Electrical Circuits")
+    parser.add_argument("--storage-key", default="study-progress")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -209,6 +239,8 @@ def main() -> None:
 
     StudyHandler.root = root
     StudyHandler.progress_path = root / "progress.json"
+    StudyHandler.title = args.title
+    StudyHandler.storage_key = args.storage_key
     if StudyHandler.progress_path.is_file():
         StudyHandler.progress = json.loads(
             StudyHandler.progress_path.read_text(encoding="utf-8")

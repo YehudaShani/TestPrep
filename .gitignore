@@ -11,4 +11,9 @@ test_out_rot/
 Split/
 Unorganized tests/
 site/
+Physics3Split/
+physics3_site/
+physics3_deploy/
+physics 3 tests/
+signals tests/
 .claude/settings.local.json

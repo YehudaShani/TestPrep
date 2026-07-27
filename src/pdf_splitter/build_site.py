@@ -12,32 +12,74 @@ Incremental: a PNG is re-rendered only when its source PDF is newer.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import shutil
 from pathlib import Path
 
 import fitz
+from PIL import Image, ImageChops
 
 from .study_server import expand_indexed_images, scan_exams
 
 STATIC_FLAG = "window.STATIC_SITE = false;"
+CONFIG_FLAG = (
+    'window.STUDY_CONFIG = {"title":"Electrical Circuits",'
+    '"storageKey":"study-progress","assetVersion":""};'
+)
 
 
-def render_pdf(pdf_path: Path, png_path: Path, dpi: int) -> bool:
+def _neutralize_colors(pix: fitz.Pixmap) -> bytes:
+    """Map every RGB pixel to its darkest channel.
+
+    Legacy solution copies mark the correct choice in red. Their question
+    crops keep the text but should not keep that color cue; using the darkest
+    channel turns red/blue text black while preserving black text and white
+    paper.
+    """
+    rgb = fitz.Pixmap(fitz.csRGB, pix)
+    image = Image.frombytes("RGB", (rgb.width, rgb.height), rgb.samples)
+    red, green, blue = image.split()
+    darkest = ImageChops.darker(ImageChops.darker(red, green), blue)
+    neutral = Image.merge("RGB", (darkest, darkest, darkest))
+    output = io.BytesIO()
+    neutral.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+def render_pdf(
+    pdf_path: Path,
+    png_path: Path,
+    dpi: int,
+    *,
+    neutralize_colors: bool = False,
+) -> bool:
     """Render page 1 of pdf_path to png_path. Returns True if rendered."""
     if png_path.is_file() and png_path.stat().st_mtime >= pdf_path.stat().st_mtime:
         return False
     doc = fitz.open(pdf_path)
     try:
         expand_indexed_images(doc)
-        png = doc[0].get_pixmap(dpi=dpi).tobytes("png")
+        pix = doc[0].get_pixmap(dpi=dpi)
+        if neutralize_colors:
+            png = _neutralize_colors(pix)
+        else:
+            png = pix.tobytes("png")
     finally:
         doc.close()
     png_path.write_bytes(png)
     return True
 
 
-def build(root: Path, out: Path, dpi: int) -> None:
+def build(
+    root: Path,
+    out: Path,
+    dpi: int,
+    *,
+    title: str = "Electrical Circuits",
+    storage_key: str = "study-progress",
+    neutralize_question_colors: bool = False,
+) -> None:
     exams = scan_exams(root)
     if not exams:
         raise SystemExit(f"no split exams found in {root}")
@@ -50,8 +92,29 @@ def build(root: Path, out: Path, dpi: int) -> None:
     page = Path(__file__).with_name("study.html").read_text(encoding="utf-8")
     if STATIC_FLAG not in page:
         raise SystemExit("study.html is missing the STATIC_SITE flag")
+    if CONFIG_FLAG not in page:
+        raise SystemExit("study.html is missing the STUDY_CONFIG flag")
+    asset_version = str(
+        max(
+            pdf.stat().st_mtime_ns
+            for exam in exams
+            for pdf in (root / exam["dir"]).glob("*.pdf")
+        )
+    )
+    config = json.dumps(
+        {
+            "title": title,
+            "storageKey": storage_key,
+            "assetVersion": asset_version,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     (out / "index.html").write_text(
-        page.replace(STATIC_FLAG, "window.STATIC_SITE = true;"), encoding="utf-8"
+        page.replace(STATIC_FLAG, "window.STATIC_SITE = true;").replace(
+            CONFIG_FLAG, f"window.STUDY_CONFIG = {config};"
+        ),
+        encoding="utf-8",
     )
 
     rendered = skipped = 0
@@ -60,7 +123,15 @@ def build(root: Path, out: Path, dpi: int) -> None:
         img_dir = out / "img" / exam["dir"]
         img_dir.mkdir(parents=True, exist_ok=True)
         for pdf in sorted(src_dir.glob("*.pdf")):
-            if render_pdf(pdf, img_dir / (pdf.stem + ".png"), dpi):
+            if render_pdf(
+                pdf,
+                img_dir / (pdf.stem + ".png"),
+                dpi,
+                neutralize_colors=(
+                    neutralize_question_colors
+                    and pdf.name.startswith("question_")
+                ),
+            ):
                 rendered += 1
             else:
                 skipped += 1
@@ -83,8 +154,22 @@ def main() -> None:
     parser.add_argument("--root", default="Split", help="directory of split exams")
     parser.add_argument("--out", default="site", help="output directory")
     parser.add_argument("--dpi", type=int, default=130)
+    parser.add_argument("--title", default="Electrical Circuits")
+    parser.add_argument("--storage-key", default="study-progress")
+    parser.add_argument(
+        "--neutralize-question-colors",
+        action="store_true",
+        help="render question images without colored answer cues",
+    )
     args = parser.parse_args()
-    build(Path(args.root).resolve(), Path(args.out).resolve(), args.dpi)
+    build(
+        Path(args.root).resolve(),
+        Path(args.out).resolve(),
+        args.dpi,
+        title=args.title,
+        storage_key=args.storage_key,
+        neutralize_question_colors=args.neutralize_question_colors,
+    )
 
 
 if __name__ == "__main__":

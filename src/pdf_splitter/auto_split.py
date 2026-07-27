@@ -31,6 +31,9 @@ from pdf_splitter.splitter import _ExportCache, _write_segment_pdf
 
 QUESTION_MARKER_RE = re.compile(r"שאלה\s*מספר")
 PRIMARY_NUM_RE = re.compile(r"מספר\s*(\d+)")
+QUESTION_WORD_RE = re.compile(
+    r"(?:ש\s*א\s*ל\s*ה|ה\s*ל\s*א\s*ש|question)", re.IGNORECASE
+)
 SCORE_MARK_RE = re.compile(r"נקודות|%")
 SOL_NAMED_RE = re.compile(r"(?:^|[\s:.\-–])שאלה|שאלה(?:$|[\s:.\-–])")
 SOL_NUM_ITEM_RE = re.compile(r"^(\d{1,2})\s*[.)]\s*$")
@@ -39,12 +42,18 @@ SOL_MARKER_RE = re.compile(
     r"\s*\(?\s*(?:שאלה)?\s*(\d{1,2})?\s*\)?\s*[:.\-–]?\s*$"
 )
 PLAIN_ITEM_RE = re.compile(r"^\s*(\d{1,2})\s*\.(?!\d)")
+SHORT_HEADER_RE = re.compile(r"^\s*((?:\d\s*){1,3})\s*:\s*$")
+OPTION_LABEL_RE = re.compile(r"(?:^|\s)(?:[אבגדהו]\s*[.)]|[.(]\s*[אבגדהו])(?=\s|$)")
 HEBREW_RE = re.compile(r"[א-ת]")
 LATIN_RE = re.compile(r"[A-Za-z]")
 FOOTER_RE = re.compile(r"עמוד\s*\d+|מתוך\s*\d+|טור\s*\d+")
 # highlighter fills: pure yellow (1 1 0) or pure cyan (0 1 1)
 HIGHLIGHT_FILL_RE = re.compile(
-    rb"(?<![\d.])(?:1(?:\.0+)?\s+1(?:\.0+)?\s+0(?:\.0+)?|0(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?)\s+(rg|scn?)"
+    rb"(?<![\d.])(?:1(?:\.0+)?\s+1(?:\.0+)?\s+0(?:\.0+)?|0(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?)\s+(rg|RG|scn?|SCN?)"
+)
+ANSWER_TEXT_COLOR_RE = re.compile(
+    rb"(?<![\d.])(?:1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?"
+    rb"|0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?)\s+(rg|RG|scn?|SCN?)"
 )
 
 MIN_SLICE_PT = 6.0
@@ -218,9 +227,62 @@ def _find_exam_headers(lines: list[Line]) -> list[Header]:
         if QUESTION_MARKER_RE.search(ln.text):
             m = PRIMARY_NUM_RE.search(ln.text)
             n = int(m.group(1)) if m else None
+            if n is not None and not 1 <= n <= MAX_QUESTION_NUM:
+                continue
+            if marked and n is not None and marked[-1].parsed_number == n:
+                continue
             marked.append(Header(ln.page, ln.y0 - 2.0, n))
     if len(marked) >= 4:
         return marked
+
+    # Physics 3 exams use a shorter "שאלה N" heading.  Some generators
+    # extract the Hebrew word backwards ("הלאש"), so accept both forms and
+    # chain only increasing question numbers to reject page/footer noise.
+    named: list[Header] = []
+    all_named: list[Header] = []
+    expected = 1
+    for ln in lines:
+        normalized = QUESTION_WORD_RE.sub("שאלה", ln.text)
+        word_pos = normalized.find("שאלה")
+        short = SHORT_HEADER_RE.match(normalized)
+        named_style = 0 <= word_pos <= 5 and len(normalized) <= 80
+        if not named_style and not short:
+            continue
+        if _sol_marker(ln.text)[0]:
+            continue
+        candidates = _number_candidates(normalized)
+        plausible = sorted(n for n in candidates if 1 <= n <= MAX_QUESTION_NUM)
+        if not plausible:
+            if named_style and re.search(r"\d", normalized):
+                all_named.append(Header(ln.page, ln.y0 - 2.0, None))
+            continue
+        parsed = expected if expected in candidates else None
+        all_named.append(Header(ln.page, ln.y0 - 2.0, parsed))
+
+        next_expected: int
+        if expected in candidates:
+            n = expected
+            next_expected = expected + 1
+        elif not named:
+            starting = [n for n in candidates if 1 <= n <= 3]
+            if not starting:
+                continue
+            n = min(starting)
+            next_expected = n + 1
+        elif expected + 1 in candidates:
+            # A few official solution files print the next heading twice
+            # (for example 9, 11, 11, 12). Keep both physical boundaries;
+            # _assign_numbers will then number them by position and warn.
+            n = expected + 1
+            next_expected = expected + 1
+        else:
+            continue
+        named.append(Header(ln.page, ln.y0 - 2.0, n))
+        expected = next_expected
+    if len(all_named) >= 4 and len(all_named) > len(named):
+        return all_named
+    if len(named) >= 2:
+        return named
 
     # Fallback: score-marked lines ("N. ( 5% )" or fragmented "N (5 נקודות)")
     # and plain "N. <Hebrew question text>" lines.  The longest strictly
@@ -460,13 +522,79 @@ def _assign_numbers(headers: list[Header]) -> list[tuple[Header, int, list[str]]
 
 
 def _strip_highlights(doc: fitz.Document) -> None:
-    """Turn highlighter fills (answer highlighting) white in all content streams."""
+    """Remove visual answer markup while preserving the underlying choices."""
     for page in doc:
-        for xref in page.get_contents():
-            stream = doc.xref_stream(xref)
-            cleaned = HIGHLIGHT_FILL_RE.sub(rb"1 1 1 \1", stream)
-            if cleaned != stream:
-                doc.update_stream(xref, cleaned)
+        for annot in list(page.annots() or []):
+            if annot.type[1].lower() in {"highlight", "underline", "squiggly"}:
+                page.delete_annot(annot)
+    # Word-produced PDFs often put page text inside nested Form XObjects, so
+    # scanning only page.get_contents() misses the actual color operators.
+    for xref in range(1, doc.xref_length()):
+        if not doc.xref_is_stream(xref):
+            continue
+        if doc.xref_get_key(xref, "Subtype")[1] == "/Image":
+            continue
+        stream = doc.xref_stream(xref)
+        cleaned = HIGHLIGHT_FILL_RE.sub(rb"1 1 1 \1", stream)
+        cleaned = ANSWER_TEXT_COLOR_RE.sub(rb"0 0 0 \1", cleaned)
+        if cleaned != stream:
+            doc.update_stream(xref, cleaned)
+
+
+def _redact_colored_solution_work(
+    source_doc: fitz.Document,
+    clean_doc: fitz.Document,
+    headers: list[Header],
+) -> None:
+    """Hide worked text that shares a row with right-column answer choices.
+
+    Several legacy solution-only PDFs place red correct choices in a narrow
+    right column and start black worked equations in the left column before
+    the final choices have ended. A horizontal crop cannot separate them, so
+    remove only left-column text in that overlap. Images and vector diagrams
+    are preserved.
+    """
+    for i, header in enumerate(headers):
+        end = (
+            (headers[i + 1].page, headers[i + 1].y)
+            if i + 1 < len(headers)
+            else (
+                len(source_doc) - 1,
+                source_doc[len(source_doc) - 1].rect.height,
+            )
+        )
+        for pno in range(header.page, end[0] + 1):
+            page = source_doc[pno]
+            lo = header.y if pno == header.page else 0.0
+            hi = end[1] if pno == end[0] else page.rect.height
+            labels: list[fitz.Rect] = []
+            colored: list[fitz.Rect] = []
+            for block in page.get_text("dict")["blocks"]:
+                for line in block.get("lines", []):
+                    for span in line["spans"]:
+                        rect = fitz.Rect(span["bbox"])
+                        if rect.y1 <= lo or rect.y0 >= hi:
+                            continue
+                        text = span["text"].strip()
+                        if re.fullmatch(r"[אבגדהו]\s*[.)]", text):
+                            labels.append(rect)
+                        color = int(span.get("color", 0))
+                        if color not in {0, 0xFFFFFF}:
+                            colored.append(rect)
+            if len(labels) < 4 or not colored:
+                continue
+            if min(rect.x0 for rect in labels) <= page.rect.width * 0.55:
+                continue
+            redact_y0 = max(lo, min(rect.y0 for rect in colored) - 2.0)
+            redact_y1 = min(hi, max(rect.y1 for rect in labels) + 3.0)
+            if redact_y1 - redact_y0 < MIN_SLICE_PT:
+                continue
+            clean_page = clean_doc[pno]
+            clean_page.add_redact_annot(
+                fitz.Rect(0, redact_y0, page.rect.width * 0.55, redact_y1),
+                fill=(1, 1, 1),
+            )
+            clean_page.apply_redactions(images=0, graphics=0, text=0)
 
 
 def _span_slices(
@@ -499,6 +627,10 @@ def _build_question_segments(
     numbered: list[tuple[Header, int, list[str]]],
     bounds: dict[int, PageBounds],
     part_end: tuple[int, float],
+    *,
+    lines: list[Line] | None = None,
+    include_shared_setup: bool = True,
+    trim_after_options: bool = False,
 ) -> list[Segment]:
     """One segment per question: shared setup (top of its group page) + body."""
     headers = [h for h, _, _ in numbered]
@@ -512,21 +644,47 @@ def _build_question_segments(
                 end = (nxt.page, bounds[nxt.page].top)
         else:
             end = part_end
+
+        if trim_after_options and lines is not None:
+            solution_starts = [
+                (ln.page, ln.y0 - 2.0)
+                for ln in lines
+                if (hdr.page, hdr.y) < (ln.page, ln.y0) < end
+                and _sol_marker(ln.text)[0]
+            ]
+            if solution_starts:
+                end = min(solution_starts)
+
+            option_lines: list[Line] = []
+            option_count = 0
+            for ln in lines:
+                pos = (ln.page, ln.y0)
+                if pos < (hdr.page, hdr.y) or pos >= end:
+                    continue
+                matches = OPTION_LABEL_RE.findall(ln.text)
+                if matches:
+                    option_lines.append(ln)
+                    option_count += len(matches)
+            if option_count >= 4:
+                last = option_lines[-1]
+                end = (last.page, last.y1 + 4.0)
+
         slices = _span_slices((hdr.page, hdr.y), end, bounds)
 
-        first_on_page = next(h for h in headers if h.page == hdr.page)
-        if first_on_page is not hdr:
-            # Not first on its page: prepend the shared setup above the group.
-            setup = _span_slices(
-                (hdr.page, bounds[hdr.page].top), (hdr.page, first_on_page.y), bounds
-            )
-            if setup and setup[0][2] - setup[0][1] >= MIN_SETUP_PT:
+        if include_shared_setup:
+            first_on_page = next(h for h in headers if h.page == hdr.page)
+            if first_on_page is not hdr:
+                # Not first on its page: prepend the shared setup above the group.
+                setup = _span_slices(
+                    (hdr.page, bounds[hdr.page].top), (hdr.page, first_on_page.y), bounds
+                )
+                if setup and setup[0][2] - setup[0][1] >= MIN_SETUP_PT:
+                    slices = setup + slices
+            else:
+                setup = _span_slices(
+                    (hdr.page, bounds[hdr.page].top), (hdr.page, hdr.y), bounds
+                )
                 slices = setup + slices
-        else:
-            setup = _span_slices(
-                (hdr.page, bounds[hdr.page].top), (hdr.page, hdr.y), bounds
-            )
-            slices = setup + slices
 
         segments.append(Segment("question", number, slices, list(warnings)))
     return segments
@@ -560,6 +718,8 @@ def _build_interleaved_segments(
     markers: list[tuple[int, float, int | None]],
     bounds: dict[int, PageBounds],
     doc_end: tuple[int, float],
+    *,
+    include_shared_setup: bool = True,
 ) -> list[Segment]:
     """Segments for exams where each question is followed by its own "פתרון"
     section (2022 winters).  A question runs from its header to the next
@@ -586,16 +746,17 @@ def _build_interleaved_segments(
                 # next question's page starts with that question's setup
                 end = (nxt[0], bounds[nxt[0]].top)
             slices = _span_slices((page, y), end, bounds)
-            first_on_page = next(h for h in q_headers if h.page == page)
-            if first_on_page is not hdr:
-                setup = _span_slices(
-                    (page, bounds[page].top), (page, first_on_page.y), bounds
-                )
-                if setup and setup[0][2] - setup[0][1] >= MIN_SETUP_PT:
+            if include_shared_setup:
+                first_on_page = next(h for h in q_headers if h.page == page)
+                if first_on_page is not hdr:
+                    setup = _span_slices(
+                        (page, bounds[page].top), (page, first_on_page.y), bounds
+                    )
+                    if setup and setup[0][2] - setup[0][1] >= MIN_SETUP_PT:
+                        slices = setup + slices
+                else:
+                    setup = _span_slices((page, bounds[page].top), (page, y), bounds)
                     slices = setup + slices
-            else:
-                setup = _span_slices((page, bounds[page].top), (page, y), bounds)
-                slices = setup + slices
             segments.append(Segment("question", n, slices, list(warnings)))
             pending.append(n)
             last_num = max(last_num, n)
@@ -625,8 +786,17 @@ def _build_interleaved_segments(
     return segments
 
 
-def auto_split_pdf(src_path: str | Path, out_dir: str | Path | None = None) -> dict:
+def auto_split_pdf(
+    src_path: str | Path,
+    out_dir: str | Path | None = None,
+    *,
+    part: str = "auto",
+    include_shared_setup: bool = True,
+    trim_after_options: bool = False,
+) -> dict:
     """Split an exam PDF into question_NN.pdf / answer_NN.pdf plus index.json."""
+    if part not in {"auto", "questions", "answers"}:
+        raise ValueError(f"unsupported part: {part}")
     src_path = Path(src_path)
     if out_dir is None:
         out_dir = src_path.parent / f"{src_path.stem}_split"
@@ -646,51 +816,81 @@ def auto_split_pdf(src_path: str | Path, out_dir: str | Path | None = None) -> d
         if not headers:
             index["error"] = "no question headers found (unsupported format?)"
             return index
+        if trim_after_options and part in {"auto", "questions"}:
+            _redact_colored_solution_work(doc, clean_doc, headers)
 
         exam_headers, sol_headers = _split_exam_and_solutions(headers)
         last_page = len(doc) - 1
         doc_end = (last_page, bounds[last_page].bottom)
 
-        interleaved: list[tuple[int, float, int | None]] = []
-        if not sol_headers:
-            first_pos = (exam_headers[0].page, exam_headers[0].y)
-            last_pos = (exam_headers[-1].page, exam_headers[-1].y)
-            markers = []
-            for ln in lines:
-                pos = (ln.page, ln.y0 - 2.0)
-                if pos <= first_pos:
-                    continue
-                if _sol_marker(ln.text)[0]:
-                    markers.append((ln.page, ln.y0 - 2.0, _sol_marker(ln.text)[1]))
-            if sum(1 for m in markers if (m[0], m[1]) < last_pos) >= 3:
-                interleaved = markers
-
-        if interleaved:
-            segments = _build_interleaved_segments(
-                _assign_numbers(exam_headers), interleaved, bounds, doc_end
+        if part == "questions":
+            segments = _build_question_segments(
+                _assign_numbers(headers),
+                bounds,
+                doc_end,
+                lines=lines,
+                include_shared_setup=include_shared_setup,
+                trim_after_options=trim_after_options,
+            )
+        elif part == "answers":
+            segments = _build_answer_segments(
+                _assign_numbers(headers), bounds, doc_end
             )
         else:
-            sol_start: tuple[int, float] | None = None
-            if sol_headers:
-                sol_start = (sol_headers[0].page, sol_headers[0].y)
-            else:
-                last_exam = exam_headers[-1]
-                sol_headers, sol_start = _find_solutions_after_title(
-                    lines,
-                    (last_exam.page, last_exam.y),
-                    _image_item_markers(doc),
-                )
-            if sol_start is not None:
-                exam_end = (sol_start[0], max(bounds[sol_start[0]].top, sol_start[1]))
-            else:
-                exam_end = doc_end
+            interleaved: list[tuple[int, float, int | None]] = []
+            if not sol_headers:
+                first_pos = (exam_headers[0].page, exam_headers[0].y)
+                last_pos = (exam_headers[-1].page, exam_headers[-1].y)
+                markers = []
+                for ln in lines:
+                    pos = (ln.page, ln.y0 - 2.0)
+                    if pos <= first_pos:
+                        continue
+                    if _sol_marker(ln.text)[0]:
+                        markers.append(
+                            (ln.page, ln.y0 - 2.0, _sol_marker(ln.text)[1])
+                        )
+                if sum(1 for m in markers if (m[0], m[1]) < last_pos) >= 3:
+                    interleaved = markers
 
-            segments = _build_question_segments(
-                _assign_numbers(exam_headers), bounds, exam_end
-            )
-            segments += _build_answer_segments(
-                _assign_numbers(sol_headers), bounds, doc_end
-            )
+            if interleaved:
+                segments = _build_interleaved_segments(
+                    _assign_numbers(exam_headers),
+                    interleaved,
+                    bounds,
+                    doc_end,
+                    include_shared_setup=include_shared_setup,
+                )
+            else:
+                sol_start: tuple[int, float] | None = None
+                if sol_headers:
+                    sol_start = (sol_headers[0].page, sol_headers[0].y)
+                else:
+                    last_exam = exam_headers[-1]
+                    sol_headers, sol_start = _find_solutions_after_title(
+                        lines,
+                        (last_exam.page, last_exam.y),
+                        _image_item_markers(doc),
+                    )
+                if sol_start is not None:
+                    exam_end = (
+                        sol_start[0],
+                        max(bounds[sol_start[0]].top, sol_start[1]),
+                    )
+                else:
+                    exam_end = doc_end
+
+                segments = _build_question_segments(
+                    _assign_numbers(exam_headers),
+                    bounds,
+                    exam_end,
+                    lines=lines,
+                    include_shared_setup=include_shared_setup,
+                    trim_after_options=trim_after_options,
+                )
+                segments += _build_answer_segments(
+                    _assign_numbers(sol_headers), bounds, doc_end
+                )
 
         out_dir.mkdir(parents=True, exist_ok=True)
         for seg in segments:
@@ -724,11 +924,33 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pdfs", nargs="+", help="exam PDF(s) to split")
     parser.add_argument("-o", "--out-dir", help="output directory (single PDF only)")
+    parser.add_argument(
+        "--part",
+        choices=("auto", "questions", "answers"),
+        default="auto",
+        help="force question-only or answer-only segmentation",
+    )
+    parser.add_argument(
+        "--no-shared-setup",
+        action="store_true",
+        help="do not prepend the top of a page to later questions on that page",
+    )
+    parser.add_argument(
+        "--trim-after-options",
+        action="store_true",
+        help="end questions after their multiple-choice option block",
+    )
     args = parser.parse_args()
 
     for pdf in args.pdfs:
         out_dir = args.out_dir if len(args.pdfs) == 1 and args.out_dir else None
-        result = auto_split_pdf(pdf, out_dir)
+        result = auto_split_pdf(
+            pdf,
+            out_dir,
+            part=args.part,
+            include_shared_setup=not args.no_shared_setup,
+            trim_after_options=args.trim_after_options,
+        )
         qs, ans = result.get("question_count", 0), result.get("answer_count", 0)
         status = result.get("error", f"{qs} questions, {ans} answers")
         print(f"{pdf}: {status}")

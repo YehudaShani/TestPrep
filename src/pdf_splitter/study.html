@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Electrical Circuits Viewer</title>
+<title>Exam Study Viewer</title>
 <style>
   :root {
     --bg: #f4f5f7; --panel: #ffffff; --text: #1c1e21; --muted: #6b7280;
@@ -111,7 +111,7 @@
 </head>
 <body>
 <header>
-  <h1>📚 Electrical Circuits</h1>
+  <h1>📚 <span id="course-title">Electrical Circuits</span></h1>
   <select id="exam-select" title="Exam"></select>
   <span id="toggle">
     <button id="btn-q">Question</button>
@@ -144,19 +144,25 @@
 // Flipped to true by build_site.py: images and exams.json are then static
 // files and progress lives in each visitor's localStorage.
 window.STATIC_SITE = false;
+window.STUDY_CONFIG = {"title":"Electrical Circuits","storageKey":"study-progress","assetVersion":""};
 const STATIC = window.STATIC_SITE;
-const STORAGE_KEY = "study-progress";
+const CONFIG = window.STUDY_CONFIG;
+const STORAGE_KEY = CONFIG.storageKey;
+const ASSET_VERSION = CONFIG.assetVersion || "";
 let exams = [];
 let progress = {};
 let state = { exam: null, n: null, mode: "q" };
 
 const $ = (id) => document.getElementById(id);
+$("course-title").textContent = CONFIG.title;
+document.title = CONFIG.title + " Viewer";
 const pad = (n) => String(n).padStart(2, "0");
 const fileFor = (mode, n) => (mode === "q" ? "question_" : "answer_") + pad(n) + ".pdf";
 const renderUrl = (exam, mode, n) =>
   STATIC
     ? "img/" + encodeURIComponent(exam.dir) + "/"
       + (mode === "q" ? "question_" : "answer_") + pad(n) + ".png"
+      + (ASSET_VERSION ? "?v=" + encodeURIComponent(ASSET_VERSION) : "")
     : "/api/render?exam=" + encodeURIComponent(exam.dir) + "&file=" + encodeURIComponent(fileFor(mode, n));
 
 function currentExam() {
