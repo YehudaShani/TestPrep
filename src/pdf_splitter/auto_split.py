@@ -43,10 +43,37 @@ SOL_MARKER_RE = re.compile(
 )
 PLAIN_ITEM_RE = re.compile(r"^\s*(\d{1,2})\s*\.(?!\d)")
 SHORT_HEADER_RE = re.compile(r"^\s*((?:\d\s*){1,3})\s*:\s*$")
-OPTION_LABEL_RE = re.compile(r"(?:^|\s)(?:[אבגדהו]\s*[.)]|[.(]\s*[אבגדהו])(?=\s|$)")
+# Choices are lettered א through ו, occasionally running on to ז. A ו label
+# sometimes extracts as the visually identical final nun; no Hebrew word starts
+# with a final form, so a standalone "ן." is always a label.
+OPTION_LETTERS = "אבגדהוזן"
+OPTION_LABEL_RE = re.compile(
+    r"(?:^|\s)(?:"
+    # "ה ." — a space between the letter and the dot is never a real word
+    rf"[{OPTION_LETTERS}]\s+[.)]"
+    # "ה." — needs the trailing break so word endings don't match
+    rf"|[{OPTION_LETTERS}][.)](?=\s|$)"
+    # RTL extraction flips the label to ".ה", sometimes glued to the choice
+    rf"|[.(]\s*[{OPTION_LETTERS}](?![א-ת])"
+    r")"
+)
+CHOICE_ITEM_RE = re.compile(r"^\s*([1-9])\s*[.)](?!\d)")
 HEBREW_RE = re.compile(r"[א-ת]")
 LATIN_RE = re.compile(r"[A-Za-z]")
 FOOTER_RE = re.compile(r"עמוד\s*\d+|מתוך\s*\d+|טור\s*\d+")
+# Physics 3 papers close with a formula sheet ("נתונים מספריים" / "משוואות").
+# It belongs to no question, so the last segment must stop before it. Some
+# files extract Hebrew right-to-left, which reverses the whole heading, so
+# match each phrase as written and reversed.
+APPENDIX_RE = re.compile(
+    r"^[\s:.\-–]*(?:"
+    + "|".join(
+        r"\s*".join(re.escape(word) for word in phrase.split())
+        for base in ("נתונים מספריים", "משוואות")
+        for phrase in (base, base[::-1])
+    )
+    + r")[\s:.\-–]*$"
+)
 # highlighter fills: pure yellow (1 1 0) or pure cyan (0 1 1)
 HIGHLIGHT_FILL_RE = re.compile(
     rb"(?<![\d.])(?:1(?:\.0+)?\s+1(?:\.0+)?\s+0(?:\.0+)?|0(?:\.0+)?\s+1(?:\.0+)?\s+1(?:\.0+)?)\s+(rg|RG|scn?|SCN?)"
@@ -245,7 +272,10 @@ def _find_exam_headers(lines: list[Line]) -> list[Header]:
         normalized = QUESTION_WORD_RE.sub("שאלה", ln.text)
         word_pos = normalized.find("שאלה")
         short = SHORT_HEADER_RE.match(normalized)
-        named_style = 0 <= word_pos <= 5 and len(normalized) <= 80
+        # A Hebrew letter directly before the word makes it a prefixed form
+        # ("בשאלה זו..." — "in this question"), which is prose, not a heading.
+        prefixed = word_pos > 0 and bool(HEBREW_RE.match(normalized[word_pos - 1]))
+        named_style = 0 <= word_pos <= 5 and len(normalized) <= 80 and not prefixed
         if not named_style and not short:
             continue
         if _sol_marker(ln.text)[0]:
@@ -623,6 +653,138 @@ def _span_slices(
     return slices
 
 
+def _choice_block_end(
+    start: tuple[int, float], end: tuple[int, float], lines: list[Line]
+) -> tuple[int, float] | None:
+    """Just past the multiple-choice block inside [start, end), or None."""
+    option_lines: list[Line] = []
+    option_count = 0
+    # Some exams label the choices "1." to "6." instead of "א." to "ו.", and a
+    # few list lettered statements first and the real choices as a numbered
+    # block below them — so track both and keep whichever ends last.
+    numbered_choices: dict[int, Line] = {}
+    for ln in lines:
+        pos = (ln.page, ln.y0)
+        if pos < start or pos >= end:
+            continue
+        matches = OPTION_LABEL_RE.findall(ln.text)
+        if matches:
+            option_lines.append(ln)
+            option_count += len(matches)
+        m = CHOICE_ITEM_RE.match(ln.text)
+        if m:
+            numbered_choices[int(m.group(1))] = ln
+
+    run = 0
+    while run + 1 in numbered_choices:
+        run += 1
+
+    ends: list[Line] = []
+    if option_count >= 4:
+        ends.append(option_lines[-1])
+    if run >= 4:
+        ends.append(numbered_choices[run])
+    if ends:
+        last = max(ends, key=lambda ln: (ln.page, ln.y1))
+        # A choice set as a stacked fraction puts its denominator on its own
+        # line, overlapping the label's row — keep pulling in lines that still
+        # overlap so the last choice is not cut in half.
+        bottom = last.y1
+        for ln in lines:
+            if ln.page != last.page or (ln.page, ln.y0) >= end:
+                continue
+            if last.y0 <= ln.y0 < bottom:
+                bottom = max(bottom, ln.y1)
+        return (last.page, bottom + 4.0)
+    return None
+
+
+def _own_body_end(
+    hdr: Header, limit: tuple[int, float], lines: list[Line]
+) -> tuple[int, float] | None:
+    """Where a question's own body stops, searching up to the next header.
+
+    A question ends at its worked solution if one follows it, otherwise just
+    after its multiple-choice block. Returns None when neither is found, so the
+    caller can keep its conservative page-break default.
+    """
+    start = (hdr.page, hdr.y)
+    end = limit
+    solution_starts = [
+        (ln.page, ln.y0 - 2.0)
+        for ln in lines
+        if start < (ln.page, ln.y0) < end and _sol_marker(ln.text)[0]
+    ]
+    if solution_starts:
+        end = min(solution_starts)
+    choice_end = _choice_block_end(start, end, lines)
+    if choice_end is not None:
+        return choice_end
+    return end if solution_starts else None
+
+
+def _is_cue_color(color: int) -> bool:
+    """A saturated ink, as used to mark the correct choice.
+
+    Body text is not always pure black — some generators emit near-black greys
+    — so plain "not black" would flag ordinary punctuation.
+    """
+    red, green, blue = (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF
+    return max(red, green, blue) - min(red, green, blue) >= 60
+
+
+def _has_answer_cue(doc: fitz.Document, start: tuple[int, float], end: tuple[int, float]) -> bool:
+    """Colored choice text or highlighter markup inside the span.
+
+    A question printed without a worked solution can still show which choice is
+    correct, so such a span is worth keeping as the answer.
+    """
+    for pno in range(start[0], min(end[0], len(doc) - 1) + 1):
+        page = doc[pno]
+        lo = start[1] if pno == start[0] else 0.0
+        hi = end[1] if pno == end[0] else page.rect.height
+        for annot in page.annots() or []:
+            if annot.type[1].lower() in {"highlight", "underline", "squiggly"}:
+                if annot.rect.y1 > lo and annot.rect.y0 < hi:
+                    return True
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    if not span["text"].strip():
+                        continue
+                    if span["bbox"][3] <= lo or span["bbox"][1] >= hi:
+                        continue
+                    if _is_cue_color(int(span.get("color", 0))):
+                        return True
+    return False
+
+
+def _is_unanswered(
+    doc: fitz.Document,
+    start: tuple[int, float],
+    end: tuple[int, float],
+    lines: list[Line],
+) -> bool:
+    """True when the span holds a question and its choices and nothing else.
+
+    Combined exam+solution files occasionally print a question the author never
+    worked out and never marked; exporting that as an "answer" just repeats the
+    question, so the caller drops it instead.
+    """
+    if any(
+        start < (ln.page, ln.y0) < end and _sol_marker(ln.text)[0] for ln in lines
+    ):
+        return False
+    choice_end = _choice_block_end(start, end, lines)
+    if choice_end is None:
+        return False
+    if any(
+        choice_end <= (ln.page, ln.y0) < end and ln.text.strip() for ln in lines
+    ):
+        return False
+    return not _has_answer_cue(doc, start, end)
+
+
 def _build_question_segments(
     numbered: list[tuple[Header, int, list[str]]],
     bounds: dict[int, PageBounds],
@@ -639,35 +801,21 @@ def _build_question_segments(
         if i + 1 < len(headers):
             nxt = headers[i + 1]
             if nxt.page == hdr.page:
-                end = (nxt.page, nxt.y)
+                end = limit = (nxt.page, nxt.y)
             else:
+                # A page break usually means the next page opens with the next
+                # question's own setup, so stop at this page's end. `limit` is
+                # the true boundary — the option/solution scan below uses it to
+                # recover questions whose body runs over the break.
                 end = (nxt.page, bounds[nxt.page].top)
+                limit = (nxt.page, nxt.y)
         else:
-            end = part_end
+            end = limit = part_end
 
         if trim_after_options and lines is not None:
-            solution_starts = [
-                (ln.page, ln.y0 - 2.0)
-                for ln in lines
-                if (hdr.page, hdr.y) < (ln.page, ln.y0) < end
-                and _sol_marker(ln.text)[0]
-            ]
-            if solution_starts:
-                end = min(solution_starts)
-
-            option_lines: list[Line] = []
-            option_count = 0
-            for ln in lines:
-                pos = (ln.page, ln.y0)
-                if pos < (hdr.page, hdr.y) or pos >= end:
-                    continue
-                matches = OPTION_LABEL_RE.findall(ln.text)
-                if matches:
-                    option_lines.append(ln)
-                    option_count += len(matches)
-            if option_count >= 4:
-                last = option_lines[-1]
-                end = (last.page, last.y1 + 4.0)
+            own_end = _own_body_end(hdr, limit, lines)
+            if own_end is not None:
+                end = own_end
 
         slices = _span_slices((hdr.page, hdr.y), end, bounds)
 
@@ -694,9 +842,17 @@ def _build_answer_segments(
     numbered: list[tuple[Header, int, list[str]]],
     bounds: dict[int, PageBounds],
     doc_end: tuple[int, float],
+    *,
+    lines: list[Line] | None = None,
+    doc: fitz.Document | None = None,
 ) -> list[Segment]:
     """One segment per worked solution: header to next header (may span pages).
-    A combined header ("שאלה11+12") emits the same content for each number."""
+    A combined header ("שאלה11+12") emits the same content for each number.
+
+    With `lines` and `doc`, a span that turns out to hold only the question and
+    its choices — no solution, no marked choice — is skipped rather than
+    exported as an answer that just repeats the question.
+    """
     headers = [h for h, _, _ in numbered]
     segments: list[Segment] = []
     for i, (hdr, number, warnings) in enumerate(numbered):
@@ -704,6 +860,12 @@ def _build_answer_segments(
             end = (headers[i + 1].page, headers[i + 1].y)
         else:
             end = doc_end
+        if (
+            lines is not None
+            and doc is not None
+            and _is_unanswered(doc, (hdr.page, hdr.y), end, lines)
+        ):
+            continue
         slices = _span_slices((hdr.page, hdr.y), end, bounds)
         segments.append(Segment("answer", number, slices, list(warnings)))
         for e in hdr.extra:
@@ -793,8 +955,13 @@ def auto_split_pdf(
     part: str = "auto",
     include_shared_setup: bool = True,
     trim_after_options: bool = False,
+    drop_unanswered: bool = False,
 ) -> dict:
-    """Split an exam PDF into question_NN.pdf / answer_NN.pdf plus index.json."""
+    """Split an exam PDF into question_NN.pdf / answer_NN.pdf plus index.json.
+
+    `drop_unanswered` suits combined exam+solution files: a question the source
+    never worked out and never marked produces no answer_NN.pdf at all.
+    """
     if part not in {"auto", "questions", "answers"}:
         raise ValueError(f"unsupported part: {part}")
     src_path = Path(src_path)
@@ -822,6 +989,20 @@ def auto_split_pdf(
         exam_headers, sol_headers = _split_exam_and_solutions(headers)
         last_page = len(doc) - 1
         doc_end = (last_page, bounds[last_page].bottom)
+        # The closing formula sheet belongs to no question — end the last
+        # segment there instead of running on to the final page.
+        after_last = (headers[-1].page, headers[-1].y)
+        appendix = [
+            (ln.page, max(bounds[ln.page].top, ln.y0 - 2.0))
+            for ln in lines
+            if (ln.page, ln.y0) > after_last and APPENDIX_RE.match(ln.text)
+        ]
+        if appendix:
+            doc_end = min(min(appendix), doc_end)
+
+        answer_filter = (
+            {"lines": lines, "doc": doc} if drop_unanswered else {}
+        )
 
         if part == "questions":
             segments = _build_question_segments(
@@ -834,7 +1015,7 @@ def auto_split_pdf(
             )
         elif part == "answers":
             segments = _build_answer_segments(
-                _assign_numbers(headers), bounds, doc_end
+                _assign_numbers(headers), bounds, doc_end, **answer_filter
             )
         else:
             interleaved: list[tuple[int, float, int | None]] = []

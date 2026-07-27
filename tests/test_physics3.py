@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import fitz
+import pytest
 from PIL import Image
 
 from pdf_splitter.auto_split import (
@@ -15,6 +16,7 @@ from pdf_splitter.build_site import _neutralize_colors
 from pdf_splitter.physics3 import (
     SEGMENT_OVERRIDES,
     _apply_segment_overrides,
+    _exam_info,
     _identity,
 )
 
@@ -106,8 +108,8 @@ def test_solution_and_exam_names_pair() -> None:
 
 
 def test_question_color_neutralization_turns_red_black() -> None:
-    pix = fitz.Pixmap(fitz.csRGB, 2, 1, bytes([255, 0, 0, 255, 255, 255]), False)
-    image = Image.open(__import__("io").BytesIO(_neutralize_colors(pix)))
+    source = Image.frombytes("RGB", (2, 1), bytes([255, 0, 0, 255, 255, 255]))
+    image = _neutralize_colors(source)
 
     assert [image.getpixel((x, 0)) for x in range(2)] == [
         (0, 0, 0),
@@ -141,3 +143,33 @@ def test_collection_segment_override_stacks_requested_slices(
         assert result[0].rect == fitz.Rect(0, 0, 100, 70)
     finally:
         result.close()
+
+
+@pytest.mark.parametrize(
+    ("stem", "label"),
+    [
+        ("Sp2013MoedA ", "2013 Spring — Moed A"),
+        ("Wn2015MoedB", "2015 Winter — Moed B"),
+        ("ExamA-Winter2016", "2016 Winter — Moed A"),
+        ("Spring 2022 Moed A + Solution", "2022 Spring — Moed A"),
+        ("Exam B winter 2024 - sol", "2024 Winter — Moed B"),
+        # Academic years name the sitting held in the later calendar year.
+        ("Winter_moedA_20242025+Solution", "2025 Winter — Moed A"),
+        ("Winter_moedA_2025-26+Solution", "2026 Winter — Moed A"),
+        # Papers covering two sittings state the shared year once.
+        ("Exam 2016- Spring B-Summer A- Solution ", "2016 Spring — Moed B + Summer — Moed A"),
+        ("SummerA-SpringB-2018-With solution", "2018 Summer — Moed A + Spring — Moed B"),
+        ("Summer Exam B  Spring Exam C with solution ", "Summer — Moed B + Spring — Moed C"),
+    ],
+)
+def test_exam_labels_are_normalized(stem: str, label: str) -> None:
+    assert _exam_info(Path(stem + ".pdf"))["label"] == label
+
+
+def test_exam_info_reports_the_primary_sitting() -> None:
+    info = _exam_info(Path("Spring 2020 Moed B+ Summer 2020 Moed A.pdf"))
+    assert (info["year"], info["season"], info["moed"]) == (2020, "Spring", "B")
+
+
+def test_unparseable_name_keeps_a_readable_label() -> None:
+    assert _exam_info(Path("mystery-paper.pdf"))["label"] == "mystery paper"

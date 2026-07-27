@@ -37,27 +37,32 @@ ANSWER_HINT_RE = re.compile(r"(?:^|[\s+_-])(?:solutions?|sol)(?:$|[\s+_.-])", re
 YEAR_RE = re.compile(r"(20\d{2})")
 NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
-# A small number of source PDFs break a question across a physical page in a
-# way that cannot be inferred from their headings alone. Keep these corrections
-# next to the collection-specific pairing logic so a full rebuild preserves the
-# reviewed crops.
+# File names spell the same sitting a dozen ways — "Sp2013MoedA",
+# "ExamA Winter2016", "spring-2022-moed-a", "winter-moeda-2024-2025" — and a
+# single PDF often covers two sittings ("2016 spring b summer a"). Reading the
+# names into (year, season, moed) triples lets every exam show up in the same
+# "2016 Spring — Moed B" shape the circuits collection uses.
+SEASON_WORDS = {
+    "winter": "Winter",
+    "wn": "Winter",
+    "spring": "Spring",
+    "sp": "Spring",
+    "summer": "Summer",
+    "sm": "Summer",
+}
+MOED_LETTERS = {"a", "b", "c"}
+GLUED_RE = re.compile(r"\b(winter|spring|summer|moed|exam|wn|sp|sm)([abc])\b")
+LETTER_DIGIT_RE = re.compile(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])")
+YEAR_PAIR_RE = re.compile(r"\b(20\d\d)(20\d\d)\b")
+FULL_YEAR_RE = re.compile(r"^20\d\d$")
+
+# Escape hatch for source PDFs whose crops cannot be inferred from their
+# headings alone: exam dir -> part -> question number -> (page, y0, y1) slices.
+# Questions that run over a page break are handled by auto_split itself, so no
+# entries are needed at present.
 SEGMENT_OVERRIDES: dict[
     str, dict[str, dict[int, list[tuple[int, float, float]]]]
-] = {
-    "physics3-winter-moeda-20242025-solution": {
-        "question": {
-            # Prompt on source page 3; choices on source page 4.
-            4: [(2, 671.1, 745.6), (3, 67.2, 267.4)],
-        },
-    },
-    "physics3-exam-a-spring-2023-solution": {
-        "answer": {
-            # Choices a-d end page 8 and e-f + the solution begin page 9.
-            # Tighten both sides of the page break to remove the false gap.
-            9: [(7, 599.2, 767.6), (8, 67.4, 278.3)],
-        },
-    },
-}
+] = {}
 
 
 @dataclass
@@ -77,13 +82,105 @@ def _identity(path: Path) -> str:
     return NON_ALNUM_RE.sub("", stem)
 
 
-def _label(path: Path) -> str:
+def _tokens(stem: str) -> list[str]:
+    text = NON_ALNUM_RE.sub(" ", stem.lower())
+    text = LETTER_DIGIT_RE.sub(" ", text)  # wn2015moeda -> wn 2015 moeda
+    text = YEAR_PAIR_RE.sub(r"\1 \2", text)  # 20242025 -> 2024 2025
+    text = GLUED_RE.sub(r"\1 \2", text)  # moeda -> moed a, springb -> spring b
+    return text.split()
+
+
+def _sittings(stem: str) -> list[dict]:
+    """Read a file name as the list of exam sittings it covers."""
+    tokens = _tokens(stem)
+    sittings: list[dict] = []
+    current: dict = {}
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        i += 1
+        if token in SEASON_WORDS:
+            field, value = "season", SEASON_WORDS[token]
+        elif token in MOED_LETTERS:
+            field, value = "moed", token.upper()
+        elif FULL_YEAR_RE.match(token):
+            year = int(token)
+            nxt = tokens[i] if i < len(tokens) else ""
+            # Academic years: "2024 2025" and "2025 26" name the sitting held
+            # in the later year, matching how the circuits exams are labelled.
+            if (
+                (len(nxt) == 2 and nxt.isdigit() and 2000 + int(nxt) == year + 1)
+                or (FULL_YEAR_RE.match(nxt) and int(nxt) == year + 1)
+            ):
+                year += 1
+                i += 1
+            field, value = "year", year
+        else:
+            continue
+        if field in current:  # a repeated field starts the next sitting
+            sittings.append(current)
+            current = {}
+        current[field] = value
+    if current:
+        sittings.append(current)
+
+    # A trailing year on its own belongs to the sitting before it.
+    if len(sittings) > 1 and set(sittings[-1]) == {"year"} and "year" not in sittings[-2]:
+        sittings[-2]["year"] = sittings.pop()["year"]
+    # Combined papers name the year once; share it with the other sittings.
+    years = [s["year"] for s in sittings if "year" in s]
+    if years:
+        for index, sitting in enumerate(sittings):
+            sitting.setdefault(
+                "year",
+                next(
+                    (s["year"] for s in reversed(sittings[:index]) if "year" in s),
+                    years[0],
+                ),
+            )
+    return sittings
+
+
+def _format_sittings(sittings: list[dict]) -> str:
+    parts = []
+    shown_year = None
+    for sitting in sittings:
+        head = []
+        if sitting.get("year") and sitting["year"] != shown_year:
+            head.append(str(sitting["year"]))
+            shown_year = sitting["year"]
+        if sitting.get("season"):
+            head.append(sitting["season"])
+        text = " ".join(head)
+        if sitting.get("moed"):
+            text = (text + " — " if text else "") + "Moed " + sitting["moed"]
+        if text:
+            parts.append(text)
+    return " + ".join(parts)
+
+
+def _fallback_label(path: Path) -> str:
     label = ANSWER_HINT_RE.sub(" ", path.stem)
     label = re.sub(r"[_-]+", " ", label)
     label = re.sub(r"\bmoed\s*([abc])\b", r"Moed \1", label, flags=re.I)
     label = re.sub(r"\bexam\b", "", label, flags=re.I)
     label = re.sub(r"\s+", " ", label).strip(" +-.")
     return label or path.stem
+
+
+def _exam_info(path: Path) -> dict:
+    """Display label plus the primary sitting, used for label and ordering."""
+    sittings = _sittings(ANSWER_HINT_RE.sub(" ", path.stem))
+    label = _format_sittings(sittings)
+    if not label:
+        return {"label": _fallback_label(path), "year": None, "season": None, "moed": None}
+    primary = sittings[0]
+    return {
+        "label": label,
+        "year": primary.get("year"),
+        "season": primary.get("season"),
+        "moed": primary.get("moed"),
+    }
 
 
 def _slug(path: Path) -> str:
@@ -207,6 +304,7 @@ def _split_group(infos: list[PdfInfo], out_root: Path) -> dict:
                 exam_dir,
                 part="answers",
                 include_shared_setup=False,
+                drop_unanswered=True,
             )
             answer_source = info.path
             strategy = "combined question/solution"
@@ -241,7 +339,7 @@ def _split_group(infos: list[PdfInfo], out_root: Path) -> dict:
     questions = _entries_by_number(question_result.get("questions", []))
     answers = _entries_by_number(answer_result.get("answers", []))
     index = {
-        "label": _label(representative),
+        **_exam_info(representative),
         "course": "Physics 3",
         "strategy": strategy,
         "source": {
@@ -286,12 +384,46 @@ def prepare(root: Path, out_root: Path) -> list[dict]:
     return results
 
 
+def relabel(out_root: Path) -> int:
+    """Refresh labels in an already-prepared directory, without re-splitting."""
+    changed = 0
+    for index_path in sorted(out_root.glob("*/index.json")):
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        source = index.get("source") or {}
+        origin = source.get("questions") or source.get("answers")
+        if not origin:
+            continue
+        info = _exam_info(Path(origin))
+        if all(index.get(key) == value for key, value in info.items()):
+            continue
+        print(f"{index.get('label')} -> {info['label']}")
+        index.update(info)
+        index_path.write_text(
+            json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        changed += 1
+    return changed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("root", help="folder containing the Physics 3 PDFs")
+    parser.add_argument(
+        "root", nargs="?", help="folder containing the Physics 3 PDFs"
+    )
     parser.add_argument("--out", default="Physics3Split")
+    parser.add_argument(
+        "--relabel",
+        action="store_true",
+        help="only rewrite the labels in --out; no PDFs are re-split",
+    )
     args = parser.parse_args()
-    prepare(Path(args.root).resolve(), Path(args.out).resolve())
+    out_root = Path(args.out).resolve()
+    if args.relabel:
+        print(f"{relabel(out_root)} exams relabelled")
+        return
+    if not args.root:
+        parser.error("root is required unless --relabel is given")
+    prepare(Path(args.root).resolve(), out_root)
 
 
 if __name__ == "__main__":

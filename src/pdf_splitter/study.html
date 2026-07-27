@@ -35,6 +35,7 @@
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 10px; font-size: 14px; max-width: 340px;
   }
+  #course-select { font-weight: 600; }
   #toggle {
     border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
     display: inline-flex;
@@ -97,6 +98,13 @@
   }
   #banner .mode-q { color: var(--accent); font-weight: 600; }
   #banner .mode-a { color: var(--answer); font-weight: 600; }
+  /* Some source exams simply never published a worked solution. */
+  #no-answer {
+    max-width: 900px; width: 100%; margin: 0; box-sizing: border-box;
+    padding: 28px 16px; text-align: center; color: var(--muted);
+    background: var(--panel); border: 1px dashed var(--border);
+    border-radius: 6px; font-size: 15px;
+  }
   .navbtn {
     border: 1px solid var(--border); background: var(--panel); color: var(--text);
     border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px;
@@ -111,7 +119,8 @@
 </head>
 <body>
 <header>
-  <h1>📚 <span id="course-title">Electrical Circuits</span></h1>
+  <h1>📚 <span id="site-title">Exam Prep</span></h1>
+  <select id="course-select" title="Course" hidden></select>
   <select id="exam-select" title="Exam"></select>
   <span id="toggle">
     <button id="btn-q">Question</button>
@@ -136,6 +145,7 @@
       <button class="navbtn" id="next-btn">Next →</button>
     </div>
     <img id="page-img" alt="" hidden>
+    <p id="no-answer" hidden>No answer for this question</p>
   </div>
 </main>
 <footer>This is a tool to help prepare for exams. Let me know what you think and if there are other courses you would like to use this for :) &nbsp;<a href="mailto:yehuda.shani@campus.technion.ac.il">yehuda.shani@campus.technion.ac.il</a></footer>
@@ -144,26 +154,39 @@
 // Flipped to true by build_site.py: images and exams.json are then static
 // files and progress lives in each visitor's localStorage.
 window.STATIC_SITE = false;
-window.STUDY_CONFIG = {"title":"Electrical Circuits","storageKey":"study-progress","assetVersion":""};
+window.STUDY_CONFIG = {"title":"Exam Prep","courses":[{"id":"circuits","title":"Electrical Circuits","storageKey":"study-progress","assetVersion":""}]};
 const STATIC = window.STATIC_SITE;
 const CONFIG = window.STUDY_CONFIG;
-const STORAGE_KEY = CONFIG.storageKey;
-const ASSET_VERSION = CONFIG.assetVersion || "";
+const COURSES = CONFIG.courses;
+// Which course the visitor last studied; their marks stay per course.
+const COURSE_KEY = "study-course";
 let exams = [];
 let progress = {};
-let state = { exam: null, n: null, mode: "q" };
+let state = { course: COURSES[0].id, exam: null, n: null, mode: "q" };
+const examCache = {};
+const progressCache = {};
 
 const $ = (id) => document.getElementById(id);
-$("course-title").textContent = CONFIG.title;
-document.title = CONFIG.title + " Viewer";
+$("site-title").textContent = CONFIG.title;
 const pad = (n) => String(n).padStart(2, "0");
 const fileFor = (mode, n) => (mode === "q" ? "question_" : "answer_") + pad(n) + ".pdf";
-const renderUrl = (exam, mode, n) =>
-  STATIC
-    ? "img/" + encodeURIComponent(exam.dir) + "/"
-      + (mode === "q" ? "question_" : "answer_") + pad(n) + ".png"
-      + (ASSET_VERSION ? "?v=" + encodeURIComponent(ASSET_VERSION) : "")
-    : "/api/render?exam=" + encodeURIComponent(exam.dir) + "&file=" + encodeURIComponent(fileFor(mode, n));
+
+function currentCourse() {
+  return COURSES.find((c) => c.id === state.course) || COURSES[0];
+}
+
+function renderUrl(exam, mode, n) {
+  const course = currentCourse();
+  if (!STATIC) {
+    return "/api/render?course=" + encodeURIComponent(course.id)
+      + "&exam=" + encodeURIComponent(exam.dir)
+      + "&file=" + encodeURIComponent(fileFor(mode, n));
+  }
+  const version = course.assetVersion || "";
+  return encodeURIComponent(course.id) + "/img/" + encodeURIComponent(exam.dir) + "/"
+    + (mode === "q" ? "question_" : "answer_") + pad(n) + ".webp"
+    + (version ? "?v=" + encodeURIComponent(version) : "");
+}
 
 function currentExam() {
   return exams.find((e) => e.dir === state.exam) || null;
@@ -187,12 +210,12 @@ function saveMark(done, flagged) {
     delete progress[dir][n];
   }
   if (STATIC) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    localStorage.setItem(currentCourse().storageKey, JSON.stringify(progress));
   } else {
     fetch("/api/progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ exam: dir, n, done, flagged }),
+      body: JSON.stringify({ course: state.course, exam: dir, n, done, flagged }),
     });
   }
   refreshMarks();
@@ -238,16 +261,19 @@ function show() {
   const exam = currentExam();
   if (!exam || state.n === null) return;
   const img = $("page-img");
-  img.hidden = false;
-  img.src = renderUrl(exam, state.mode, state.n);
+  // A question whose source exam never published a solution shows a notice in
+  // place of the image, rather than a dead Answer button.
+  const missing = state.mode === "a" && !hasAnswer(exam, state.n);
+  img.hidden = missing;
+  $("no-answer").hidden = !missing;
+  if (!missing) img.src = renderUrl(exam, state.mode, state.n);
   const label = state.mode === "q" ? "Question" : "Answer";
   $("status").innerHTML =
     '<span class="mode-' + state.mode + '">' + label + " " + state.n + "</span>" +
     ' <span>· ' + exam.label + "</span>" +
-    (state.mode === "q" && !hasAnswer(exam, state.n) ? " · <em>no answer file</em>" : "");
+    (state.mode === "q" && !hasAnswer(exam, state.n) ? " · <em>no answer</em>" : "");
   $("btn-q").className = state.mode === "q" ? "active-q" : "";
   $("btn-a").className = state.mode === "a" ? "active-a" : "";
-  $("btn-a").disabled = !hasAnswer(exam, state.n);
   const idx = exam.questions.indexOf(state.n);
   $("prev-btn").disabled = idx <= 0;
   $("next-btn").disabled = idx >= exam.questions.length - 1;
@@ -259,24 +285,52 @@ function show() {
   if (other === "q" || hasAnswer(exam, state.n)) {
     new Image().src = renderUrl(exam, other, state.n);
   }
-  history.replaceState(null, "",
-    "#" + encodeURIComponent(state.exam) + "/" + state.n + "/" + state.mode);
+  history.replaceState(null, "", "#" + encodeURIComponent(state.course) + "/"
+    + encodeURIComponent(state.exam) + "/" + state.n + "/" + state.mode);
   refreshMarks();
 }
 
-// Deep link: #<exam-dir>/<question>[/<q|a>], kept in sync by show().
+// Deep link: #<course>/<exam-dir>/<question>[/<q|a>], kept in sync by show().
+function parseHash() {
+  const m = /^#([^/]+)\/([^/]+)\/(\d+)(?:\/(q|a))?$/.exec(location.hash);
+  if (m) {
+    return {
+      course: decodeURIComponent(m[1]),
+      dir: decodeURIComponent(m[2]),
+      n: Number(m[3]),
+      mode: m[4] === "a" ? "a" : "q",
+    };
+  }
+  // Links shared before the site carried more than one course.
+  const old = /^#([^/]+)\/(\d+)(?:\/(q|a))?$/.exec(location.hash);
+  if (old) {
+    return {
+      course: COURSES[0].id,
+      dir: decodeURIComponent(old[1]),
+      n: Number(old[2]),
+      mode: old[3] === "a" ? "a" : "q",
+    };
+  }
+  return null;
+}
+
 function applyHash() {
-  const m = /^#([^/]+)\/(\d+)(?:\/(q|a))?$/.exec(location.hash);
-  if (!m) return false;
-  const dir = decodeURIComponent(m[1]);
-  const exam = exams.find((e) => e.dir === dir);
-  const n = Number(m[2]);
-  if (!exam || !exam.questions.includes(n)) return false;
-  state.exam = dir;
-  $("exam-select").value = dir;
-  buildGrid();
-  selectQuestion(n, m[3] === "a" && hasAnswer(exam, n) ? "a" : "q");
-  return true;
+  const target = parseHash();
+  if (!target || !COURSES.some((c) => c.id === target.course)) {
+    return Promise.resolve(false);
+  }
+  return loadCourse(target.course).then(() => {
+    const exam = exams.find((e) => e.dir === target.dir);
+    if (!exam || !exam.questions.includes(target.n)) {
+      selectExam(exams.length ? exams[0].dir : null);
+      return true;
+    }
+    state.exam = target.dir;
+    $("exam-select").value = target.dir;
+    buildGrid();
+    selectQuestion(target.n, target.mode);
+    return true;
+  });
 }
 
 function selectQuestion(n, mode) {
@@ -307,9 +361,77 @@ function buildGrid() {
 
 function selectExam(dir) {
   state.exam = dir;
+  $("exam-select").value = dir || "";
   buildGrid();
   const exam = currentExam();
   selectQuestion(exam ? exam.questions[0] : null);
+}
+
+function fillExamSelect() {
+  const sel = $("exam-select");
+  sel.innerHTML = "";
+  for (const e of exams) {
+    const opt = document.createElement("option");
+    opt.value = e.dir;
+    opt.textContent = e.label + " (" + e.questions.length + " questions)";
+    sel.appendChild(opt);
+  }
+}
+
+function fetchExams(id) {
+  if (examCache[id]) return Promise.resolve(examCache[id]);
+  const url = STATIC
+    ? encodeURIComponent(id) + "/exams.json"
+    : "/api/exams?course=" + encodeURIComponent(id);
+  return fetch(url).then((r) => r.json()).then((data) => (examCache[id] = data));
+}
+
+function fetchProgress(id) {
+  if (progressCache[id]) return Promise.resolve(progressCache[id]);
+  if (!STATIC) {
+    return fetch("/api/progress?course=" + encodeURIComponent(id))
+      .then((r) => r.json())
+      .then((data) => (progressCache[id] = data));
+  }
+  const course = COURSES.find((c) => c.id === id);
+  let stored = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(course.storageKey) || "{}");
+  } catch (err) {
+    stored = {};
+  }
+  return Promise.resolve((progressCache[id] = stored));
+}
+
+// Each course keeps its own exam list and its own marks; both are fetched
+// once and then cached, so switching back and forth is instant.
+function loadCourse(id) {
+  return Promise.all([fetchExams(id), fetchProgress(id)]).then(([data, prog]) => {
+    state.course = id;
+    exams = data;
+    progress = prog;
+    $("course-select").value = id;
+    document.title =
+      (COURSES.length > 1 ? currentCourse().title + " · " : "") + CONFIG.title;
+    try {
+      localStorage.setItem(COURSE_KEY, id);
+    } catch (err) {
+      /* private browsing: remembering the course is optional */
+    }
+    fillExamSelect();
+  });
+}
+
+function selectCourse(id) {
+  return loadCourse(id).then(() => {
+    if (exams.length) selectExam(exams[0].dir);
+    else {
+      state.exam = null;
+      buildGrid();
+      $("page-img").hidden = true;
+      $("status").textContent = "No exams available for this course yet.";
+    }
+  });
 }
 
 function step(delta) {
@@ -320,8 +442,6 @@ function step(delta) {
 }
 
 function toggleMode() {
-  const exam = currentExam();
-  if (state.mode === "q" && !hasAnswer(exam, state.n)) return;
   state.mode = state.mode === "q" ? "a" : "q";
   show();
 }
@@ -334,6 +454,7 @@ $("btn-flag").onclick = (e) => { toggleFlag(); e.currentTarget.blur(); };
 $("prev-btn").onclick = (e) => { step(-1); e.currentTarget.blur(); };
 $("next-btn").onclick = (e) => { step(1); e.currentTarget.blur(); };
 $("exam-select").onchange = (e) => { selectExam(e.target.value); e.target.blur(); };
+$("course-select").onchange = (e) => { selectCourse(e.target.value); e.target.blur(); };
 function copyToClipboard(text) {
   const viaCommand = () => new Promise((resolve, reject) => {
     const ta = document.createElement("textarea");
@@ -373,32 +494,26 @@ document.addEventListener("keydown", (e) => {
   else if (e.code === "KeyF") toggleFlag();
 });
 
-Promise.all(
-  STATIC
-    ? [
-        fetch("exams.json").then((r) => r.json()),
-        Promise.resolve(JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")),
-      ]
-    : [
-        fetch("/api/exams").then((r) => r.json()),
-        fetch("/api/progress").then((r) => r.json()),
-      ]
-)
-  .then(([data, prog]) => {
-    exams = data;
-    progress = prog;
-    const sel = $("exam-select");
-    for (const e of exams) {
-      const opt = document.createElement("option");
-      opt.value = e.dir;
-      opt.textContent = e.label + " (" + e.questions.length + " questions)";
-      sel.appendChild(opt);
-    }
-    if (!applyHash()) {
-      if (exams.length) selectExam(exams[0].dir);
-      else $("status").textContent = "No split exams found in the Split directory.";
-    }
-  });
+const courseSelect = $("course-select");
+for (const c of COURSES) {
+  const opt = document.createElement("option");
+  opt.value = c.id;
+  opt.textContent = c.title;
+  courseSelect.appendChild(opt);
+}
+courseSelect.hidden = COURSES.length < 2;
+
+let remembered = null;
+try {
+  remembered = localStorage.getItem(COURSE_KEY);
+} catch (err) {
+  remembered = null;
+}
+const initialCourse = COURSES.some((c) => c.id === remembered)
+  ? remembered
+  : COURSES[0].id;
+
+applyHash().then((handled) => (handled ? null : selectCourse(initialCourse)));
 </script>
 </body>
 </html>

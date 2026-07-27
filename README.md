@@ -29,6 +29,15 @@ question/answer pairing:
 python -m pdf_splitter.physics3 "physics 3 tests" --out Physics3Split
 ```
 
+Exam names in that collection are spelled a dozen ways (`Sp2013MoedA`,
+`ExamA-Winter2016`, `Winter_moedA_2025-26`), so the preparation reads each one
+into its sittings and labels it like the circuits exams: `2016 Spring — Moed B
++ Summer — Moed A`. Refreshing those labels does not need a re-split:
+
+```bash
+python -m pdf_splitter.physics3 --relabel --out Physics3Split
+```
+
 That preparation command is only needed when the source collection changes.
 Normal study sessions serve the already-separated questions and answers
 directly from `Physics3Split/`:
@@ -46,6 +55,54 @@ Use `.\serve-physics3.ps1 -Port 9000` if port 8765 is already occupied.
 
 The generated `Physics3Split/` directory is ignored by Git because it contains
 hundreds of derived PDFs.
+
+## Courses
+
+`src/pdf_splitter/courses.py` is the single registry of courses: an id, a
+display name, the directory of split exams, and the localStorage bucket its
+progress lives in. Both the viewer and the site build read it, so adding a
+course means adding one entry there (plus the split-exam directory).
+
+```bash
+python -m pdf_splitter.study_server              # every prepared course
+python -m pdf_splitter.study_server --course physics3
+```
+
+The viewer shows a course picker whenever more than one course is served, and
+each course keeps its own exam list, progress, and deep links
+(`#<course>/<exam>/<question>/<q|a>`).
+
+## Static site
+
+```bash
+python -m pdf_splitter.build_site --out site     # every prepared course
+python -m pdf_splitter.build_site --course circuits --out site
+```
+
+The build renders each course into `site/<course>/` (`exams.json` plus
+`img/<exam>/*.webp`) and writes one `index.html` that carries the course list.
+Pages are stored as lossless WebP — pixel-identical to the PNGs they replaced
+at about a third of the bytes (~62 MB for both courses). Rendering is
+incremental: a page is rebuilt only when its source PDF is newer, so adding a
+course does not re-render the existing ones.
+
+## Deploying
+
+```powershell
+.\deploy-site.ps1
+```
+
+That rebuilds the site, commits it, and force-pushes it to the `gh-pages`
+branch of <https://github.com/YehudaShani/TestPrep>, which serves
+<https://yehudashani.github.io/TestPrep/>.
+
+Each deploy is a single orphan commit rather than a commit on top of the last
+one. The site is a build artifact, and keeping its history would mean every
+re-render of the ~2,700 pages stayed in the repository forever; squashing keeps
+the clone about the size of the site. That is why the push must be forced.
+
+Use `-SkipBuild` to deploy what is already in `site/`, and `-NoPush` to stage
+the commit and inspect it before it goes out.
 
 ## Requirements
 

@@ -19,7 +19,5 @@ $env:PYTHONPATH = Join-Path $projectRoot "src"
 Write-Host "Serving the prepared Physics 3 collection from $contentRoot"
 Write-Host "Open http://127.0.0.1:$Port"
 & $pythonExe -m pdf_splitter.study_server `
-    --root $contentRoot `
-    --port $Port `
-    --title "Physics 3" `
-    --storage-key "physics3-study-progress"
+    --course "physics3=$contentRoot" `
+    --port $Port
