@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -95,6 +96,9 @@ class Line:
     y1: float
     text: str
     bold: bool = False
+    # Largest span size on the line. LaTeX-typeset solutions mark their
+    # question sections by size alone, with no word to match on.
+    size: float = 0.0
 
 
 @dataclass
@@ -152,7 +156,8 @@ def _extract_lines(doc: fitz.Document) -> tuple[list[Line], dict[int, PageBounds
     heights: list[float] = []
     for pno, page in enumerate(doc):
         heights.append(page.rect.height)
-        raw: list[tuple[float, float, float, str, bool]] = []  # y0,y1,x0,text,bold
+        # y0,y1,x0,text,bold,size
+        raw: list[tuple[float, float, float, str, bool, float]] = []
         for block in page.get_text("dict")["blocks"]:
             for ln in block.get("lines", []):
                 text = " ".join(
@@ -164,12 +169,13 @@ def _extract_lines(doc: fitz.Document) -> tuple[list[Line], dict[int, PageBounds
                     span["flags"] & 16 or "Bold" in span["font"]
                     for span in ln["spans"]
                 )
+                size = max(span["size"] for span in ln["spans"])
                 bbox = ln["bbox"]
-                raw.append((bbox[1], bbox[3], bbox[0], text, bold))
+                raw.append((bbox[1], bbox[3], bbox[0], text, bold, size))
         raw.sort(key=lambda r: r[0])
 
         merged: list[Line] = []
-        group: list[tuple[float, float, float, str, bool]] = []
+        group: list[tuple[float, float, float, str, bool, float]] = []
 
         def flush() -> None:
             if not group:
@@ -182,6 +188,7 @@ def _extract_lines(doc: fitz.Document) -> tuple[list[Line], dict[int, PageBounds
                     max(r[1] for r in group),
                     " ".join(r[3] for r in group),
                     all(r[4] for r in group),
+                    max(r[5] for r in group),
                 )
             )
             group.clear()
@@ -700,13 +707,20 @@ def _choice_block_end(
 
 
 def _own_body_end(
-    hdr: Header, limit: tuple[int, float], lines: list[Line]
+    hdr: Header,
+    limit: tuple[int, float],
+    lines: list[Line],
+    *,
+    use_choices: bool = True,
 ) -> tuple[int, float] | None:
     """Where a question's own body stops, searching up to the next header.
 
     A question ends at its worked solution if one follows it, otherwise just
     after its multiple-choice block. Returns None when neither is found, so the
     caller can keep its conservative page-break default.
+
+    `use_choices` is off for open questions, whose sub-sections carry the same
+    א-ו labels the choice scan looks for and would be cut short by it.
     """
     start = (hdr.page, hdr.y)
     end = limit
@@ -717,9 +731,10 @@ def _own_body_end(
     ]
     if solution_starts:
         end = min(solution_starts)
-    choice_end = _choice_block_end(start, end, lines)
-    if choice_end is not None:
-        return choice_end
+    if use_choices:
+        choice_end = _choice_block_end(start, end, lines)
+        if choice_end is not None:
+            return choice_end
     return end if solution_starts else None
 
 
@@ -785,6 +800,15 @@ def _is_unanswered(
     return not _has_answer_cue(doc, start, end)
 
 
+def _holds_text(
+    start: tuple[int, float], end: tuple[int, float], lines: list[Line] | None
+) -> bool:
+    """Whether any line falls inside the span."""
+    if lines is None:
+        return False
+    return any(start <= (ln.page, ln.y0) < end for ln in lines)
+
+
 def _build_question_segments(
     numbered: list[tuple[Header, int, list[str]]],
     bounds: dict[int, PageBounds],
@@ -793,6 +817,8 @@ def _build_question_segments(
     lines: list[Line] | None = None,
     include_shared_setup: bool = True,
     trim_after_options: bool = False,
+    stop_at_solution: bool = False,
+    run_to_next_header: bool = False,
 ) -> list[Segment]:
     """One segment per question: shared setup (top of its group page) + body."""
     headers = [h for h, _, _ in numbered]
@@ -800,20 +826,29 @@ def _build_question_segments(
     for i, (hdr, number, warnings) in enumerate(numbered):
         if i + 1 < len(headers):
             nxt = headers[i + 1]
+            limit = (nxt.page, nxt.y)
+            over_break = (nxt.page, bounds[nxt.page].top)
             if nxt.page == hdr.page:
-                end = limit = (nxt.page, nxt.y)
+                end = limit
+            elif run_to_next_header and _holds_text(over_break, limit, lines):
+                # Nothing is shared between these questions, so what stands
+                # above the next heading is this question carried over the
+                # page break — but only take it when something is there, or
+                # every crop grows by the blank strip above the heading.
+                end = limit
             else:
                 # A page break usually means the next page opens with the next
                 # question's own setup, so stop at this page's end. `limit` is
                 # the true boundary — the option/solution scan below uses it to
                 # recover questions whose body runs over the break.
-                end = (nxt.page, bounds[nxt.page].top)
-                limit = (nxt.page, nxt.y)
+                end = over_break
         else:
             end = limit = part_end
 
-        if trim_after_options and lines is not None:
-            own_end = _own_body_end(hdr, limit, lines)
+        if (trim_after_options or stop_at_solution) and lines is not None:
+            own_end = _own_body_end(
+                hdr, limit, lines, use_choices=trim_after_options
+            )
             if own_end is not None:
                 end = own_end
 
@@ -955,12 +990,24 @@ def auto_split_pdf(
     part: str = "auto",
     include_shared_setup: bool = True,
     trim_after_options: bool = False,
+    stop_at_solution: bool = False,
+    run_to_next_header: bool = False,
     drop_unanswered: bool = False,
+    header_finder: Callable[[list[Line]], list[Header]] | None = None,
 ) -> dict:
     """Split an exam PDF into question_NN.pdf / answer_NN.pdf plus index.json.
 
     `drop_unanswered` suits combined exam+solution files: a question the source
     never worked out and never marked produces no answer_NN.pdf at all.
+
+    `stop_at_solution` ends each question where its worked solution begins,
+    without the multiple-choice trimming `trim_after_options` also does.
+
+    `run_to_next_header` suits collections where questions share nothing: each
+    one then runs to the next heading instead of stopping at a page break.
+
+    `header_finder` replaces the built-in header detection for collections
+    whose headings this module does not recognize.
     """
     if part not in {"auto", "questions", "answers"}:
         raise ValueError(f"unsupported part: {part}")
@@ -979,7 +1026,7 @@ def auto_split_pdf(
     index: dict = {"source": str(src_path), "questions": [], "answers": []}
     try:
         lines, bounds = _extract_lines(doc)
-        headers = _find_exam_headers(lines)
+        headers = (header_finder or _find_exam_headers)(lines)
         if not headers:
             index["error"] = "no question headers found (unsupported format?)"
             return index
@@ -1012,6 +1059,8 @@ def auto_split_pdf(
                 lines=lines,
                 include_shared_setup=include_shared_setup,
                 trim_after_options=trim_after_options,
+                stop_at_solution=stop_at_solution,
+                run_to_next_header=run_to_next_header,
             )
         elif part == "answers":
             segments = _build_answer_segments(
@@ -1068,6 +1117,8 @@ def auto_split_pdf(
                     lines=lines,
                     include_shared_setup=include_shared_setup,
                     trim_after_options=trim_after_options,
+                    stop_at_solution=stop_at_solution,
+                    run_to_next_header=run_to_next_header,
                 )
                 segments += _build_answer_segments(
                     _assign_numbers(sol_headers), bounds, doc_end

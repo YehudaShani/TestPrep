@@ -14,5 +14,6 @@ site/
 Physics3Split/
 physics3_deploy/
 physics 3 tests/
+SignalsSplit/
 signals tests/
 .claude/settings.local.json

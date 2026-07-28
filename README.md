@@ -56,6 +56,41 @@ Use `.\serve-physics3.ps1 -Port 9000` if port 8765 is already occupied.
 The generated `Physics3Split/` directory is ignored by Git because it contains
 hundreds of derived PDFs.
 
+## Signals & Systems collection
+
+Twenty years of Signals & Systems (044131) papers, in every shape the course
+has used: exam and solution as separate files, a single Word-era file that
+works each question out under its own "פתרון", and English LaTeX solutions
+that number their questions by section heading alone.
+
+```bash
+python -m pdf_splitter.signals "signals tests" --out SignalsSplit
+```
+
+These are open questions rather than multiple choice, and each sub-section
+carries its own weight, so the header search that serves the other two
+collections reads sub-sections as questions. This one goes by the word
+"שאלה" and by type size — every paper sets its question headings larger than
+anything else that mentions a question — and takes the multiple-choice part
+some years append when it follows the last full-size heading.
+
+The command prints a line per sitting and lists the ones it could not read;
+`SignalsSplit/signals-report.json` holds the same summary.
+
+Every sitting was reviewed against its source. Eight papers cannot be cropped
+from their headings at all — some carry questions and solutions under the same
+`שאלה N` heading, one heads its bonus question `שאלת בונוס`, two close with a
+multiple-choice part whose items are lettered rather than numbered — so their
+boundaries are written out in `SEGMENT_OVERRIDES` in `signals.py`, as
+`(page, y0, y1)` slices in PDF points with 0-based pages. `SEGMENT_DROPS`
+removes a crop whose heading turned out to head a solution.
+
+What remains is source-side: 2006 Spring Moed C and 2007 Winter Moed B are
+scans or use a legacy Hebrew encoding and yield nothing; 2006 Spring Moed A/B
+and 2019 Winter Moed A have questions but no usable solution file. Papers
+split as `solution copy only` state each question and work it out with nothing
+between, so their question crop carries the solution too.
+
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a

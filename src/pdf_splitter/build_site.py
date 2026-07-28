@@ -34,6 +34,8 @@ from .study_server import CONFIG_FLAG, expand_indexed_images, scan_exams
 STATIC_FLAG = "window.STATIC_SITE = false;"
 # Must match the suffix study.html builds its image URLs with.
 IMAGE_SUFFIX = ".webp"
+# WebP tops out at 16383 pixels a side.
+WEBP_MAX_PX = 16383
 
 
 def _neutralize_colors(image: Image.Image) -> Image.Image:
@@ -56,6 +58,19 @@ def _encode(image: Image.Image) -> bytes:
     return output.getvalue()
 
 
+def _fitting_dpi(page: fitz.Page, dpi: int) -> int:
+    """The asked-for dpi, lowered if the page would not fit in a WebP.
+
+    A solution stitched from a dozen source pages — signals papers run that
+    long — makes one very tall page; rendering it a little smaller keeps it
+    one image, which is what the viewer shows.
+    """
+    longest = max(page.rect.width, page.rect.height) * dpi / 72
+    if longest <= WEBP_MAX_PX:
+        return dpi
+    return max(1, int(dpi * WEBP_MAX_PX / longest))
+
+
 def render_pdf(
     pdf_path: Path,
     img_path: Path,
@@ -69,7 +84,8 @@ def render_pdf(
     doc = fitz.open(pdf_path)
     try:
         expand_indexed_images(doc)
-        pix = fitz.Pixmap(fitz.csRGB, doc[0].get_pixmap(dpi=dpi))
+        page = doc[0]
+        pix = fitz.Pixmap(fitz.csRGB, page.get_pixmap(dpi=_fitting_dpi(page, dpi)))
         image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
     finally:
         doc.close()

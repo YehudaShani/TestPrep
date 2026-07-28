@@ -42,6 +42,7 @@ COURSES: tuple[Course, ...] = (
         "physics3-study-progress",
         neutralize_question_colors=True,
     ),
+    Course("signals", "Signals & Systems", "SignalsSplit", "signals-study-progress"),
 )
 
 BY_ID = {course.id: course for course in COURSES}
