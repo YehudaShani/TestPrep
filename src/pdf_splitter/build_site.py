@@ -27,7 +27,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageChops
 
-from .courses import SITE_TITLE, Course
+from .courses import ANALYTICS_CODE, SITE_TITLE, Course
 from .courses import resolve as resolve_courses
 from .study_server import CONFIG_FLAG, expand_indexed_images, scan_exams
 
@@ -155,7 +155,7 @@ def build(courses: list[Course], out: Path, dpi: int, *, base: Path) -> None:
     ]
 
     config = json.dumps(
-        {"title": SITE_TITLE, "courses": entries},
+        {"title": SITE_TITLE, "courses": entries, "analytics": ANALYTICS_CODE},
         ensure_ascii=False,
         separators=(",", ":"),
     )

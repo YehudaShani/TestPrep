@@ -104,6 +104,24 @@ the clone about the size of the site. That is why the push must be forced.
 Use `-SkipBuild` to deploy what is already in `site/`, and `-NoPush` to stage
 the commit and inspect it before it goes out.
 
+## Traffic counting
+
+GitHub Pages keeps no logs and the repository's Insights → Traffic panel counts
+views of the repository, not of the site, so visits are counted in the page
+itself. Set `ANALYTICS_CODE` in `src/pdf_splitter/courses.py` to the site code
+of a [GoatCounter](https://www.goatcounter.com/) account (the `<code>` in
+`<code>.goatcounter.com`) and deploy; leaving it empty disables counting.
+
+Only `build_site.py` passes the code to the page, so the local study server
+never reports anything and the dashboard stays free of your own testing.
+GoatCounter sets no cookies and stores no personal data, which is why the site
+needs no consent banner.
+
+Two things are counted: the visit itself, and the exam a visitor opens
+(`/TestPrep/<course>/<exam-dir>`, once per exam per visit — moving between
+questions inside an exam is not reported). Ad blockers suppress some share of
+the hits, so read the numbers as trends rather than as a headcount.
+
 ## Requirements
 
 - Python 3.10+

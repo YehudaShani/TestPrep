@@ -16,6 +16,11 @@ from pathlib import Path
 
 SITE_TITLE = "Exam Prep"
 
+# GoatCounter site code ("<code>.goatcounter.com") for counting visits to the
+# published site. Only the static build passes it to the page, so the local
+# server never reports anything; empty here disables counting everywhere.
+ANALYTICS_CODE = "testprepper"
+
 
 @dataclass(frozen=True)
 class Course:

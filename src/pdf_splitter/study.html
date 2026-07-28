@@ -166,6 +166,37 @@ let state = { course: COURSES[0].id, exam: null, n: null, mode: "q" };
 const examCache = {};
 const progressCache = {};
 
+// Visit counting, enabled only when the static build passes a GoatCounter
+// site code (see courses.py) — the local server never does. count.js records
+// the visit on load; countView() adds a hit per exam opened, once each, so
+// stepping through questions does not flood the counter.
+const countView = (() => {
+  const code = CONFIG.analytics;
+  if (!code) return () => {};
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://gc.zgo.at/count.js";
+  script.dataset.goatcounter = "https://" + code + ".goatcounter.com/count";
+  document.head.appendChild(script);
+  const base = location.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/");
+  const seen = new Set();
+  // Hits raised before count.js arrives wait here; if it never does (blocked),
+  // the seen-set keeps the queue to one entry per exam.
+  const pending = [];
+  const flush = () => {
+    while (window.goatcounter && window.goatcounter.count && pending.length) {
+      window.goatcounter.count(pending.shift());
+    }
+  };
+  script.addEventListener("load", flush);
+  return (path, title) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    pending.push({ path: base + path, title: title });
+    flush();
+  };
+})();
+
 const $ = (id) => document.getElementById(id);
 $("site-title").textContent = CONFIG.title;
 const pad = (n) => String(n).padStart(2, "0");
@@ -287,6 +318,8 @@ function show() {
   }
   history.replaceState(null, "", "#" + encodeURIComponent(state.course) + "/"
     + encodeURIComponent(state.exam) + "/" + state.n + "/" + state.mode);
+  // Every route into an exam ends here, so this is the one place worth counting.
+  countView(state.course + "/" + state.exam, currentCourse().title + " · " + exam.label);
   refreshMarks();
 }
 
