@@ -16,4 +16,6 @@ physics3_deploy/
 physics 3 tests/
 SignalsSplit/
 signals tests/
+MedicalSplit/
+Medical Imaging Tests/
 .claude/settings.local.json

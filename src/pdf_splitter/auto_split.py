@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -231,6 +232,18 @@ def _extract_lines(doc: fitz.Document) -> tuple[list[Line], dict[int, PageBounds
                 lines.append(ln)
         bounds[pno] = PageBounds(top=top, bottom=bottom)
     return lines, bounds
+
+
+def body_size(lines: list[Line]) -> float:
+    """The size most of the text is set in.
+
+    Collections that head their questions by type size rather than by a word
+    measure their headings against this.
+    """
+    weight: Counter[float] = Counter()
+    for ln in lines:
+        weight[round(ln.size, 1)] += len(ln.text)
+    return weight.most_common(1)[0][0] if weight else 0.0
 
 
 def _number_candidates(text: str) -> set[int]:

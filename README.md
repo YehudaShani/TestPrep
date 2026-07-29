@@ -91,6 +91,43 @@ and 2019 Winter Moed A have questions but no usable solution file. Papers
 split as `solution copy only` state each question and work it out with nothing
 between, so their question crop carries the solution too.
 
+## Medical Imaging collection
+
+Fourteen sittings of Medical Imaging (046831), 2014-2025.
+
+```bash
+python -m pdf_splitter.medical "Medical Imaging Tests" --out MedicalSplit
+```
+
+These papers are divided into lettered parts, which none of the other
+collections are. Part א is multiple choice and numbers its questions 1..N;
+part ב is open questions and starts counting at 1 all over again; 2017 and
+2018 add a part ג of guest-lecture questions that carries on from part א.
+Nothing in a number alone says which part it belongs to, so the split reads
+the parts first — a title above body size that says what its part asks, not
+the cover page's plan of how long to spend on each — and then numbers the
+questions straight through the paper.
+
+Three shapes of answer: an exam paired with a solution copy that is the same
+paper with the answers written into it (2017-2023), a single file that works
+each question out under its own "פתרון" or "התשובה הינה" (2024-2025), and an
+exam whose only answers are a key page at the end (2014-2016), which yields
+questions and no answers. The key page is not part of the last question, and
+neither is the correction page one year closes with.
+
+The 2014 papers and the 2017 exam were typeset with a font whose digits
+extract as other characters — the 2017 date reads "62...602.", and every full
+stop in 2014 Moed B comes out as a "9" — so no run of question numbers can be
+found in them. Those fall back to taking the numbered lines in page order,
+which finds the questions but cannot tell a heading it missed from one it
+invented; the command says which sittings that was, as does
+`MedicalSplit/medical-report.json`. It costs the 2017 paper one question of
+its fourteen and 2014 Moed B one of its twenty.
+
+Two sittings have questions and no answers for reasons in the source: 2016 is
+an exam with no solution at all, and the 2020 Moed B answers are a single page
+of multiple-choice results that answers no question on its own.
+
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a
@@ -117,7 +154,7 @@ python -m pdf_splitter.build_site --course circuits --out site
 The build renders each course into `site/<course>/` (`exams.json` plus
 `img/<exam>/*.webp`) and writes one `index.html` that carries the course list.
 Pages are stored as lossless WebP — pixel-identical to the PNGs they replaced
-at about a third of the bytes (~62 MB for both courses). Rendering is
+at about a third of the bytes (~112 MB for the four courses). Rendering is
 incremental: a page is rebuilt only when its source PDF is newer, so adding a
 course does not re-render the existing ones.
 

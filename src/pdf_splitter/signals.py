@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +37,7 @@ from .auto_split import (
     _find_exam_headers,
     _sol_marker,
     auto_split_pdf,
+    body_size,
 )
 from .splitter import _ExportCache, _write_segment_pdf
 
@@ -305,17 +305,9 @@ def _numbers(text: str) -> set[int]:
     }
 
 
-def _body_size(lines: list[Line]) -> float:
-    """The size most of the text is set in."""
-    weight: Counter[float] = Counter()
-    for ln in lines:
-        weight[round(ln.size, 1)] += len(ln.text)
-    return weight.most_common(1)[0][0] if weight else 0.0
-
-
 def _named_candidates(lines: list[Line]) -> list[Line]:
     """Lines that read as "question N", not as prose mentioning one."""
-    body = _body_size(lines)
+    body = body_size(lines)
     found: list[Line] = []
     for ln in lines:
         if len(ln.text) > MAX_HEADING_CHARS or _sol_marker(ln.text)[0]:
@@ -377,7 +369,7 @@ def _named_headers(lines: list[Line]) -> list[Header]:
     # The cover page counts up what each question is worth and which sections
     # are a safety net, in body type and in full sentences. Whatever stands
     # before the paper's first real heading is that, not a heading.
-    body = _body_size(lines)
+    body = body_size(lines)
     opening = [ln for ln in candidates if ln.size >= body + SIZE_MARGIN]
     if opening:
         start = (opening[0].page, opening[0].y0)
@@ -405,7 +397,7 @@ def _priced_headers(lines: list[Line]) -> list[Header]:
     Sub-sections are priced the same way, so a heading is told from them by
     being set above body size; the numbers still have to run 1, 2, 3, …
     """
-    body = _body_size(lines)
+    body = body_size(lines)
     found: list[Header] = []
     expected = 1
     for ln in lines:
@@ -420,7 +412,7 @@ def _priced_headers(lines: list[Line]) -> list[Header]:
 
 def _section_headers(lines: list[Line]) -> list[Header]:
     """LaTeX solution sections: a bare number set larger than the body text."""
-    body = _body_size(lines)
+    body = body_size(lines)
     found: list[Header] = []
     expected = 1
     for ln in lines:
