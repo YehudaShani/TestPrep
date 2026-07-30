@@ -128,6 +128,54 @@ Two sittings have questions and no answers for reasons in the source: 2016 is
 an exam with no solution at all, and the 2020 Moed B answers are a single page
 of multiple-choice results that answers no question on its own.
 
+## Probability collection
+
+Fourteen sittings of Introduction to Probability (104034), 2023-2026.
+
+```bash
+python -m pdf_splitter.probability "Probability Tests" --out ProbabilitySplit
+```
+
+**These are exam papers only.** No sitting in the collection comes with a
+solution, an answer key, or a marked-up copy, so every sitting yields questions
+and no answers, and the viewer shows "no answer" against each one. That is a
+gap in the source, not in the split.
+
+It is also the only collection with nothing to read: nine of the fourteen
+papers are photographs of the printed exam with no text layer at all, and of
+the five that carry text, two extract as mojibake. The questions are therefore
+found in the picture of the page.
+
+Each paper is eight multiple-choice questions and two or three open ones. The
+multiple-choice questions are read by what closes them — a row of five or six
+short alternatives spread across the page, which no other line of an exam looks
+like and which the layout keeps whether the paper was typeset in Word or in
+LaTeX. Counting those rows counts the questions, and it also says which pages
+hold them: the cover page of instructions and standard normal table has none,
+and neither does the page of announcements one paper opens with. Two papers
+have no cover page at all and open on question 1.
+
+The open questions carry no alternatives and are read instead by the hanging
+indent every paper sets its question numbers with: the number sits about
+eighteen points further right than the text it heads. The phone-scanned papers
+are keystoned, so the right margin drifts by as much as fifty points down a
+page — more than the indent being measured — and is fitted as a line rather
+than taken as a constant.
+
+That last part is where the split is approximate, and the command says exactly
+which sittings it is approximate for, as does
+`ProbabilitySplit/probability-report.json`. A sub-section of an open question
+("א.", "ב.") hangs about half as far as the number does, and half of eighteen
+points is inside the error the keystone leaves, so in six sittings an open
+question comes out one sub-section at a time rather than whole. The two
+LaTeX-typeset sittings set their numbers flush with the text and give the open
+questions no indent to be found by at all, so those stay on the end of the last
+multiple-choice question. Two sittings lose one row of alternatives to a scan,
+which merges two of their questions into one.
+
+Four sittings — 2023 Spring Moed A, 2023 Winter Moed B, 2025 Spring Moed A and
+2026 Winter Moed A — come out with nothing to report against them.
+
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a
@@ -154,7 +202,7 @@ python -m pdf_splitter.build_site --course circuits --out site
 The build renders each course into `site/<course>/` (`exams.json` plus
 `img/<exam>/*.webp`) and writes one `index.html` that carries the course list.
 Pages are stored as lossless WebP — pixel-identical to the PNGs they replaced
-at about a third of the bytes (~112 MB for the four courses). Rendering is
+at about a third of the bytes (~236 MB for the five courses). Rendering is
 incremental: a page is rebuilt only when its source PDF is newer, so adding a
 course does not re-render the existing ones.
 
