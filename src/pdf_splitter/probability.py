@@ -113,7 +113,7 @@ MIN_QUESTIONS = 5
 # this is reported rather than corrected.
 MIN_CHOICE_QUESTIONS = 8
 MAX_CHOICE_QUESTIONS = 10
-MAX_OPEN_QUESTIONS = 3
+MAX_OPEN_QUESTIONS = 2
 # Running headers and footers ("מבוא להסתברות ח 104034", "CamScanner נסרק עם")
 # repeat down the paper at the same height and the same width. How much either
 # may wander and still be the same piece of furniture — a scan is never
@@ -134,13 +134,20 @@ Position = tuple[int, float]
 
 @dataclass(frozen=True)
 class Band:
-    """One line of ink on a page, in PDF points from the top."""
+    """One line of ink on a page, in PDF points from the top.
+
+    ``runs`` are the stretches of ink along the line, kept so that the right
+    edge can be re-measured once the text block is known: a photographed sheet
+    carries a dark curl of its own edge in the corner of the page, and where
+    that falls beside a line of text it lands in the same band.
+    """
 
     page: int
     y0: float
     y1: float
     x0: float
     x1: float
+    runs: tuple[tuple[float, float], ...] = ()
 
     @property
     def middle(self) -> float:
@@ -249,6 +256,11 @@ def _page_ink(page: fitz.Page, pno: int) -> tuple[list[Band], list[float]]:
             and (clusters[-1][1] - clusters[0][0]) >= CHOICE_SPREAD * width
         ):
             choices.append((bottom + 1 + edge) * PT)
+        stretches = tuple(
+            ((run[0] + edge) * PT, (run[1] + 1 + edge) * PT)
+            for run in _runs(columns, COL_INK, 1)
+            if run[1] >= inked[0] and run[0] <= inked[-1]
+        )
         bands.append(
             Band(
                 pno,
@@ -256,6 +268,7 @@ def _page_ink(page: fitz.Page, pno: int) -> tuple[list[Band], list[float]]:
                 (bottom + 1 + edge) * PT,
                 (inked[0] + edge) * PT,
                 (inked[-1] + 1 + edge) * PT,
+                stretches,
             )
         )
     return bands, choices
@@ -357,6 +370,22 @@ def _bounds(
     return out
 
 
+def _overhang(band: Band, margin: float) -> float:
+    """How far past the margin a line of text reaches.
+
+    Ink further out than any question number hangs is not text at all but the
+    dark curl of a photographed sheet's own edge, which the papers carry in the
+    top right corner of the page — exactly where the question numbers are. Where
+    it lands beside a line, the line is measured again without it rather than
+    thrown away, since the line it landed beside is often a heading.
+    """
+    over = band.x1 - margin
+    if over <= MAX_MARGIN_PT:
+        return over
+    inside = [run[1] for run in band.runs if run[1] - margin <= MAX_MARGIN_PT]
+    return max(inside) - margin if inside else 0.0
+
+
 def _overhangs(bands: list[Band], running: set[Band]) -> dict[Band, float]:
     """How far past its page's right margin each line of text reaches."""
     by_page: dict[int, list[Band]] = {}
@@ -390,7 +419,7 @@ def _overhangs(bands: list[Band], running: set[Band]) -> dict[Band, float]:
         slope, intercept, _ = fit
         for band in page:
             if band not in running:
-                out[band] = band.x1 - (slope * band.middle + intercept)
+                out[band] = _overhang(band, slope * band.middle + intercept)
     return out
 
 
@@ -456,16 +485,31 @@ def _open_headings(
 ) -> list[Position]:
     """The open questions after the multiple-choice part, by their indent.
 
-    A sub-section of an open question hangs too, about half as far, and there
-    are more of them than there are questions — so the paper's own indent, not
-    a bare threshold, is what a heading has to match.
+    A sub-section of an open question hangs too, about half as far — and half of
+    eighteen points is inside the error a keystoned scan leaves, so the indent
+    alone cannot tell "10." from the "א." under it. What can is the page: an open
+    question needs a page of ruled space to be answered in, so each one starts a
+    fresh page, and the first indented line on a page opens a question while the
+    rest of that page's are its sub-sections.
+
+    Two open questions set on one page would come out as a single crop holding
+    both. That is the better way to be wrong: a crop of the whole question is
+    still worth studying, where a sub-section cut away from the question it
+    belongs to says nothing on its own.
     """
     floor = max(MARGIN_PT, indent - INDENT_TOLERANCE)
-    return sorted(
+    tops = sorted(
         (band.page, band.y0 - LIFT_PT)
         for band, over in overhangs.items()
         if floor <= over <= MAX_MARGIN_PT and (band.page, band.y1) > after
     )
+    seen: set[int] = set()
+    first: list[Position] = []
+    for top in tops:
+        if top[0] not in seen:
+            seen.add(top[0])
+            first.append(top)
+    return first
 
 
 def _read(path: Path) -> Paper:
@@ -506,13 +550,12 @@ def _read(path: Path) -> Paper:
             "or nine multiple-choice questions"
         )
     if len(tail) > MAX_OPEN_QUESTIONS:
-        # The indent that tells an open question's number from one of its own
-        # sub-sections is about eight points, and the keystone of a phone scan
-        # moves the margin by more than that. Where more sub-sections than
-        # questions come back, each sub-section becomes an entry of its own.
+        # One open question carried over onto a second page opens that page with
+        # a sub-section, which reads as a question of its own.
         warnings.append(
-            f"{len(tail)} open questions read where a paper carries two or three; "
-            "some are a sub-section split off on its own"
+            f"{len(tail)} open questions read where a paper carries "
+            f"{MAX_OPEN_QUESTIONS}; one is a sub-section that opened a page of "
+            "its own"
         )
     elif not tail:
         # The LaTeX-typeset papers set their question numbers flush with the

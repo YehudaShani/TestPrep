@@ -157,24 +157,37 @@ have no cover page at all and open on question 1.
 
 The open questions carry no alternatives and are read instead by the hanging
 indent every paper sets its question numbers with: the number sits about
-eighteen points further right than the text it heads. The phone-scanned papers
-are keystoned, so the right margin drifts by as much as fifty points down a
-page — more than the indent being measured — and is fitted as a line rather
-than taken as a constant.
+eighteen points further right than the text it heads. Two things get in the way
+of measuring that. The phone-scanned papers are keystoned, so the right margin
+drifts by as much as fifty points down a page — more than the indent itself —
+and is therefore fitted as a line rather than taken as a constant. And each of
+those papers carries a dark curl of the sheet's own edge in the top right corner
+of the page, which is exactly where the question numbers are; where it falls
+beside a line of text it lands in the same band, and that line is measured again
+without it rather than thrown away, since the line it landed beside is often a
+heading.
 
-That last part is where the split is approximate, and the command says exactly
-which sittings it is approximate for, as does
-`ProbabilitySplit/probability-report.json`. A sub-section of an open question
-("א.", "ב.") hangs about half as far as the number does, and half of eighteen
-points is inside the error the keystone leaves, so in six sittings an open
-question comes out one sub-section at a time rather than whole. The two
-LaTeX-typeset sittings set their numbers flush with the text and give the open
-questions no indent to be found by at all, so those stay on the end of the last
-multiple-choice question. Two sittings lose one row of alternatives to a scan,
-which merges two of their questions into one.
+Even measured, the indent cannot tell an open question's number from the
+sub-sections under it: "א." hangs about half as far as "10.", and half of
+eighteen points is inside the error the keystone leaves. What can tell them
+apart is the page. An open question needs a page of ruled space to be answered
+in, so each one starts a fresh page, and the first indented line on a page opens
+a question while the rest of that page's are its sub-sections. Two open
+questions set on one page would come out as a single crop holding both, which is
+the better way to be wrong: a crop of the whole question is still worth
+studying, where a sub-section cut away from the question it belongs to says
+nothing on its own.
 
-Four sittings — 2023 Spring Moed A, 2023 Winter Moed B, 2025 Spring Moed A and
-2026 Winter Moed A — come out with nothing to report against them.
+Eight of the fourteen sittings come out with nothing to report against them, at
+exactly the ten questions their cover page says they carry. The command says
+what is wrong with the rest, as does
+`ProbabilitySplit/probability-report.json`: two lose a row of alternatives to a
+scan, which merges two of their questions into one; the two LaTeX-typeset
+sittings set their numbers flush with the text and give the open questions no
+indent to be found by at all, so those stay on the end of the last
+multiple-choice question; and one carries an open question over onto a second
+page, which opens that page with a sub-section and reads as a question of its
+own.
 
 ## Courses
 
