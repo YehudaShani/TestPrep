@@ -57,11 +57,14 @@
   }
   #marks button.active-done { background: var(--answer); color: var(--accent-text); }
   #marks button.active-flag { background: var(--flag); color: var(--accent-text); }
-  #btn-share {
+  #btn-share, #btn-copy {
     border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
     font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
   }
-  #btn-share.copied { background: var(--answer); color: var(--accent-text); border-color: var(--answer); }
+  #btn-share.copied, #btn-copy.copied {
+    background: var(--answer); color: var(--accent-text); border-color: var(--answer);
+  }
+  #btn-copy:disabled { opacity: .5; cursor: default; }
   .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
   main { flex: 1; display: flex; min-height: 0; }
   nav {
@@ -131,7 +134,8 @@
     <button id="btn-flag" title="flag as difficult (F)">⚑ Hard</button>
   </span>
   <button id="btn-share" title="copy a link to this question">🔗 Share</button>
-  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard</span>
+  <button id="btn-copy" title="copy question + answer as one image (C)">🖼️ Copy Q+A</button>
+  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard &nbsp;·&nbsp; C: copy image</span>
 </header>
 <main>
   <nav>
@@ -505,6 +509,103 @@ function copyToClipboard(text) {
     : viaCommand();
 }
 
+// "Copy Q+A" stitches the question and its answer into a single PNG: one
+// paste then carries the whole thing into a chat, and the pair cannot get
+// separated on the way. Sizes are capped so a solution stitched from a dozen
+// source pages still fits in a canvas the browser will allocate.
+const COPY_GAP = 24;
+const COPY_MAX_W = 1400;
+const COPY_MAX_H = 20000;
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("could not load " + src));
+    img.src = src;
+  });
+}
+
+function stitchImages(images) {
+  let width = Math.min(COPY_MAX_W, Math.max(...images.map((i) => i.naturalWidth)));
+  const heightAt = (w) =>
+    images.reduce((sum, i) => sum + Math.round((i.naturalHeight * w) / i.naturalWidth), 0)
+    + COPY_GAP * (images.length - 1);
+  const tall = heightAt(width);
+  if (tall > COPY_MAX_H) width = Math.max(1, Math.floor((width * COPY_MAX_H) / tall));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = heightAt(width);
+  const ctx = canvas.getContext("2d");
+  // Pages are transparent where the PDF left them blank; chats vary in
+  // background colour, so paint paper white underneath.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let y = 0;
+  for (const img of images) {
+    const h = Math.round((img.naturalHeight * width) / img.naturalWidth);
+    ctx.drawImage(img, 0, y, width, h);
+    y += h + COPY_GAP;
+  }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("encode failed"))), "image/png");
+  });
+}
+
+function combinedImage() {
+  const exam = currentExam();
+  const urls = [renderUrl(exam, "q", state.n)];
+  if (hasAnswer(exam, state.n)) urls.push(renderUrl(exam, "a", state.n));
+  return Promise.all(urls.map(loadImage)).then(stitchImages);
+}
+
+// Browsers without image support on the clipboard (and any denied permission)
+// fall back to saving the same PNG, which is still shareable.
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function copyQuestionAndAnswer() {
+  const btn = $("btn-copy");
+  const exam = currentExam();
+  if (!exam || state.n === null || btn.disabled) return;
+  const name = exam.dir + "-" + pad(state.n) + ".png";
+  const finish = (text, ok) => {
+    btn.textContent = text;
+    btn.classList.toggle("copied", !!ok);
+    btn.disabled = false;
+    setTimeout(() => {
+      btn.textContent = "🖼️ Copy Q+A";
+      btn.classList.remove("copied");
+    }, 1800);
+  };
+  btn.disabled = true;
+  btn.textContent = "Copying…";
+  // Safari only honours a clipboard write started in the click's own turn, so
+  // the ClipboardItem is built here and handed the still-pending blob.
+  const blob = combinedImage();
+  const written = window.ClipboardItem && navigator.clipboard && navigator.clipboard.write
+    ? navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+    : Promise.reject(new Error("clipboard images unsupported"));
+  written
+    .then(() => finish("✓ Copied!", true))
+    .catch(() =>
+      blob
+        .then((b) => {
+          saveBlob(b, name);
+          finish("⬇ Saved image");
+        })
+        .catch(() => finish("Copy failed"))
+    );
+}
+
+$("btn-copy").onclick = (e) => { copyQuestionAndAnswer(); e.currentTarget.blur(); };
+
 $("btn-share").onclick = (e) => {
   const btn = e.currentTarget;
   copyToClipboard(location.href)
@@ -525,6 +626,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowLeft") step(-1);
   else if (e.code === "KeyD") toggleDone();
   else if (e.code === "KeyF") toggleFlag();
+  else if (e.code === "KeyC") copyQuestionAndAnswer();
 });
 
 const courseSelect = $("course-select");
