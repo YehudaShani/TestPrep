@@ -265,6 +265,12 @@ The viewer shows a course picker whenever more than one course is served, and
 each course keeps its own exam list, progress, and deep links
 (`#<course>/<exam>/<question>/<q|a>`).
 
+Exams are listed newest sitting first, which means the semesters inside a year
+run backwards too — summer, then spring, then winter, the order they were
+examined in. The one thing that does not run backwards is the moed: Moed A and
+Moed B are the same exam twice, and A is the one to study first. A sitting
+whose season the collection does not record follows the dated ones of its year.
+
 ## Static site
 
 ```bash

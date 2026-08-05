@@ -36,7 +36,11 @@ YEAR_RE = re.compile(r"(20\d\d)")
 # [ /Indexed <base> <hival> <lookup stream ref> ] — capture hival + lookup xref
 INDEXED_CS_RE = re.compile(r"/Indexed\s.*?\s(\d+)\s+(\d+)\s+0\s+R\s*\]\s*$", re.DOTALL)
 SEASON_RE = re.compile(r"spring|winter|summer", re.IGNORECASE)
-SEASON_RANK = {"Winter": 0, "Spring": 1, "Summer": 2}
+# Within a calendar year the winter semester is examined in February, the
+# spring one in June and the summer one in September, so a newest-first list
+# runs summer, spring, winter. A sitting whose season is unknown goes last.
+SEASON_RANK = {"Summer": 0, "Spring": 1, "Winter": 2}
+UNDATED_SEASON = 3
 MOED_RE = re.compile(r"moed[_ ]?([ab])", re.IGNORECASE)
 SAFE_NAME_RE = re.compile(r"^[\w\-. ]+$")
 
@@ -51,7 +55,11 @@ def exam_label(dirname: str) -> str:
 
 
 def sort_key(dirname: str, metadata: dict) -> tuple:
-    """Newest first; within a year winter, then spring, then summer.
+    """Newest sitting first, and within a sitting Moed A first.
+
+    Years run backwards and so do the semesters inside them, which is the
+    order the sittings were held in; the moed does not, because Moed A and
+    Moed B are the same exam twice and A is the one to study first.
 
     Courses whose index.json records the sitting (year/season/moed) are
     ordered by that; the rest fall back to reading the directory name.
@@ -64,7 +72,12 @@ def sort_key(dirname: str, metadata: dict) -> tuple:
     if season is None:
         match = SEASON_RE.search(dirname)
         season = match.group(0).title() if match else ""
-    return (-year, SEASON_RANK.get(season, 1), metadata.get("moed") or "", dirname)
+    return (
+        -year,
+        SEASON_RANK.get(season, UNDATED_SEASON),
+        metadata.get("moed") or "",
+        dirname,
+    )
 
 
 def scan_exams(root: Path) -> list[dict]:
