@@ -50,6 +50,12 @@ COURSES: tuple[Course, ...] = (
         "ProbabilitySplit",
         "probability-study-progress",
     ),
+    Course(
+        "mechatronics",
+        "Intro to Mechatronics",
+        "MechatronicsSplit",
+        "mechatronics-study-progress",
+    ),
 )
 
 BY_ID = {course.id: course for course in COURSES}

@@ -189,6 +189,66 @@ multiple-choice question; and one carries an open question over onto a second
 page, which opens that page with a sub-section and reads as a question of its
 own.
 
+## Mechatronics collection
+
+Twenty-four sittings of Introduction to Mechatronics (034022), 2005-2021.
+
+```bash
+python -m pdf_splitter.mechatronics "Mechatronics Tests" --out MechatronicsSplit
+```
+
+The course examined two ways, and the collection holds both: multiple-choice
+papers of twenty items grouped under topic titles ("שאלות 3-1 – תופעות מעבר"),
+and open papers of three or four questions with lettered sub-sections. Which
+one a paper is decides how it is cut, so the split reads that first: six or
+more numbered items with alternatives under them means a multiple-choice paper,
+and anything less means the "שאלה N" headings are the questions rather than the
+titles of the parts.
+
+Almost every multiple-choice paper here is a marked copy — the correct choice
+highlighted in yellow — and that highlight is the only answer most of these
+sittings have. The question crop drops it and the answer crop keeps it, the
+same as the circuits Sol_ files, except that half these papers paint the
+highlight into the page instead of leaving it as an annotation.
+
+The item numbers cannot be read at all in half the multiple-choice papers:
+they are typeset in fonts whose character map is wrong, so 10 extracts as ".4"
+and 20 as "04". The items are found instead by what closes them — a block of
+four to six lettered alternatives, which nothing else on an exam page looks
+like — and numbered by their position. Reading the alternatives is most of the
+work: the papers write a label six different ways ("א.", ".א", "( א5"), a
+choice that says "answers ב and ג are both right" ends in something shaped
+exactly like the next label, and a fraction puts its denominator on a line of
+its own in the middle of the block.
+
+Two things break the reading. A choice that says "answers ב and ג are both
+right" ends in something shaped exactly like the next label, so a label out of
+order is not one; and one paper letters straight through two questions on a
+page, as far as ט, which is also how a scrambled "פשט" comes out at the head of
+a question — so the further letters are only read with their bracket after
+them.
+
+What the reading cannot find at all is a question answered by a picture — five
+graphs to choose between, or five truth tables. Those are recovered by the
+space around them: a numbered line with almost no text between it and the
+question after it is a question whose alternatives are a drawing.
+
+Five papers, the 2005 and 2006 ones, are photocopies with no text layer at all.
+Their questions and the handwritten solutions after them are written out in
+`SEGMENT_OVERRIDES` in `mechatronics.py`, as `(page, y0, y1)` slices in PDF
+points with 0-based pages, and `DRAWN_HEADINGS` does the same for two
+statements of the 2007 paper that were scanned back in with its solutions.
+
+Twenty-four sittings come out with 230 questions and 200 answers, every paper
+at the number of questions it says it has. What is missing is source-side: six
+sittings are exam papers with no answers of any kind, the 2005 Moed B paper is
+missing its third question, and the 2005 Moed C paper the solution to its
+third. The 2011 paper is a worked solution with no exam file to go with it, so
+each of its question crops opens with the tail of the previous answer — the two
+stand on the page with nothing between them.
+`MechatronicsSplit/mechatronics-report.json` says what each sitting came out
+with.
+
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a
