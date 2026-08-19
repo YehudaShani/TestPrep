@@ -88,6 +88,11 @@ ANSWER_TEXT_COLOR_RE = re.compile(
 MIN_SLICE_PT = 6.0
 MIN_SETUP_PT = 15.0
 MAX_QUESTION_NUM = 40
+# Rendering resolution and grey level for asking whether a band of a page has
+# anything on it. A tenth of an inch is enough to see a figure or a rule, and
+# scanned paper is never quite white.
+INK_DPI = 36
+INK_LEVEL = 250
 
 
 @dataclass
@@ -130,6 +135,11 @@ def _sol_marker(text: str) -> tuple[bool, int | None]:
             return True, int(nums[0])
         return True, None
     return False, None
+
+
+# How a collection reads a solution marker: a line of text in, whether it
+# opens a worked solution and the question number it names out.
+SolMarker = Callable[[str], tuple[bool, int | None]]
 
 
 @dataclass
@@ -495,7 +505,9 @@ def _chain_item_headers(
 
 
 def _chain_marker_headers(
-    lines: list[Line], after: tuple[int, float]
+    lines: list[Line],
+    after: tuple[int, float],
+    sol_marker: SolMarker = _sol_marker,
 ) -> list[Header]:
     """Chain-validate per-question "פתרוןN" markers ("פתרון" with the number
     lost in extraction fills the next expected slot)."""
@@ -504,7 +516,7 @@ def _chain_marker_headers(
     for ln in lines:
         if (ln.page, ln.y0) <= after:
             continue
-        marker, num = _sol_marker(ln.text)
+        marker, num = sol_marker(ln.text)
         if not marker:
             continue
         if num is not None and expected <= num <= expected + 3:
@@ -520,13 +532,14 @@ def _find_solutions_after_title(
     lines: list[Line],
     after: tuple[int, float],
     image_markers: list[tuple[int, float]] = [],
+    sol_marker: SolMarker = _sol_marker,
 ) -> tuple[list[Header], tuple[int, float] | None]:
     """Locate a solutions title after `after`, then chain-validate its headers."""
     title: tuple[int, float] | None = None
     for ln in lines:
         if (ln.page, ln.y0) <= after:
             continue
-        if _sol_marker(ln.text)[0]:
+        if sol_marker(ln.text)[0]:
             title = (ln.page, ln.y0 - 2.0)
             break
     if title is None:
@@ -539,7 +552,7 @@ def _find_solutions_after_title(
         with_images = _chain_item_headers(lines, title, image_markers)
         if len(with_images) > len(by_item) + 4:
             by_item = with_images
-    by_marker = _chain_marker_headers(lines, after)
+    by_marker = _chain_marker_headers(lines, after, sol_marker)
     if len(by_marker) > len(by_item):
         return by_marker, (by_marker[0].page, by_marker[0].y)
     return by_item, title
@@ -725,6 +738,7 @@ def _own_body_end(
     lines: list[Line],
     *,
     use_choices: bool = True,
+    sol_marker: SolMarker = _sol_marker,
 ) -> tuple[int, float] | None:
     """Where a question's own body stops, searching up to the next header.
 
@@ -740,7 +754,7 @@ def _own_body_end(
     solution_starts = [
         (ln.page, ln.y0 - 2.0)
         for ln in lines
-        if start < (ln.page, ln.y0) < end and _sol_marker(ln.text)[0]
+        if start < (ln.page, ln.y0) < end and sol_marker(ln.text)[0]
     ]
     if solution_starts:
         end = min(solution_starts)
@@ -792,6 +806,7 @@ def _is_unanswered(
     start: tuple[int, float],
     end: tuple[int, float],
     lines: list[Line],
+    sol_marker: SolMarker = _sol_marker,
 ) -> bool:
     """True when the span holds a question and its choices and nothing else.
 
@@ -800,7 +815,7 @@ def _is_unanswered(
     question, so the caller drops it instead.
     """
     if any(
-        start < (ln.page, ln.y0) < end and _sol_marker(ln.text)[0] for ln in lines
+        start < (ln.page, ln.y0) < end and sol_marker(ln.text)[0] for ln in lines
     ):
         return False
     choice_end = _choice_block_end(start, end, lines)
@@ -813,13 +828,37 @@ def _is_unanswered(
     return not _has_answer_cue(doc, start, end)
 
 
-def _holds_text(
-    start: tuple[int, float], end: tuple[int, float], lines: list[Line] | None
+def _ink_probe(doc: fitz.Document) -> Callable[[int, float, float], bool]:
+    """Ask whether a band of a page has anything on it at all.
+
+    A band that carries a figure and no words is empty as far as the
+    extracted text is concerned, so it is rendered small and looked at.
+    """
+
+    def probe(page: int, y0: float, y1: float) -> bool:
+        if y1 - y0 < MIN_SLICE_PT:
+            return False
+        clip = fitz.Rect(0, y0, doc[page].rect.width, y1)
+        pix = doc[page].get_pixmap(clip=clip, dpi=INK_DPI, colorspace=fitz.csGRAY)
+        return bool(pix.samples) and min(pix.samples) < INK_LEVEL
+
+    return probe
+
+
+def _holds_content(
+    start: tuple[int, float],
+    end: tuple[int, float],
+    lines: list[Line] | None,
+    has_ink: Callable[[int, float, float], bool] | None = None,
 ) -> bool:
-    """Whether any line falls inside the span."""
+    """Whether the span holds a line of text, or anything else drawn."""
     if lines is None:
         return False
-    return any(start <= (ln.page, ln.y0) < end for ln in lines)
+    if any(start <= (ln.page, ln.y0) < end for ln in lines):
+        return True
+    if has_ink is None or start[0] != end[0]:
+        return False
+    return has_ink(start[0], start[1], end[1])
 
 
 def _build_question_segments(
@@ -832,6 +871,8 @@ def _build_question_segments(
     trim_after_options: bool = False,
     stop_at_solution: bool = False,
     run_to_next_header: bool = False,
+    sol_marker: SolMarker = _sol_marker,
+    has_ink: Callable[[int, float, float], bool] | None = None,
 ) -> list[Segment]:
     """One segment per question: shared setup (top of its group page) + body."""
     headers = [h for h, _, _ in numbered]
@@ -843,7 +884,9 @@ def _build_question_segments(
             over_break = (nxt.page, bounds[nxt.page].top)
             if nxt.page == hdr.page:
                 end = limit
-            elif run_to_next_header and _holds_text(over_break, limit, lines):
+            elif run_to_next_header and _holds_content(
+                over_break, limit, lines, has_ink
+            ):
                 # Nothing is shared between these questions, so what stands
                 # above the next heading is this question carried over the
                 # page break — but only take it when something is there, or
@@ -860,7 +903,11 @@ def _build_question_segments(
 
         if (trim_after_options or stop_at_solution) and lines is not None:
             own_end = _own_body_end(
-                hdr, limit, lines, use_choices=trim_after_options
+                hdr,
+                limit,
+                lines,
+                use_choices=trim_after_options,
+                sol_marker=sol_marker,
             )
             if own_end is not None:
                 end = own_end
@@ -893,6 +940,7 @@ def _build_answer_segments(
     *,
     lines: list[Line] | None = None,
     doc: fitz.Document | None = None,
+    sol_marker: SolMarker = _sol_marker,
 ) -> list[Segment]:
     """One segment per worked solution: header to next header (may span pages).
     A combined header ("שאלה11+12") emits the same content for each number.
@@ -911,7 +959,7 @@ def _build_answer_segments(
         if (
             lines is not None
             and doc is not None
-            and _is_unanswered(doc, (hdr.page, hdr.y), end, lines)
+            and _is_unanswered(doc, (hdr.page, hdr.y), end, lines, sol_marker)
         ):
             continue
         slices = _span_slices((hdr.page, hdr.y), end, bounds)
@@ -1007,6 +1055,8 @@ def auto_split_pdf(
     run_to_next_header: bool = False,
     drop_unanswered: bool = False,
     header_finder: Callable[[list[Line]], list[Header]] | None = None,
+    sol_marker: SolMarker | None = None,
+    min_interleaved_markers: int = 3,
 ) -> dict:
     """Split an exam PDF into question_NN.pdf / answer_NN.pdf plus index.json.
 
@@ -1021,7 +1071,16 @@ def auto_split_pdf(
 
     `header_finder` replaces the built-in header detection for collections
     whose headings this module does not recognize.
+
+    `sol_marker` does the same for the line that opens a worked solution,
+    which not every collection writes in Hebrew.
+
+    `min_interleaved_markers` is how many solution markers have to stand
+    between the questions before the file is read as stating each question and
+    then working it out. Collections that mark their solutions unambiguously
+    can lower it.
     """
+    read_sol_marker = sol_marker or _sol_marker
     if part not in {"auto", "questions", "answers"}:
         raise ValueError(f"unsupported part: {part}")
     src_path = Path(src_path)
@@ -1074,10 +1133,16 @@ def auto_split_pdf(
                 trim_after_options=trim_after_options,
                 stop_at_solution=stop_at_solution,
                 run_to_next_header=run_to_next_header,
+                sol_marker=read_sol_marker,
+                has_ink=_ink_probe(doc),
             )
         elif part == "answers":
             segments = _build_answer_segments(
-                _assign_numbers(headers), bounds, doc_end, **answer_filter
+                _assign_numbers(headers),
+                bounds,
+                doc_end,
+                sol_marker=read_sol_marker,
+                **answer_filter,
             )
         else:
             interleaved: list[tuple[int, float, int | None]] = []
@@ -1089,11 +1154,14 @@ def auto_split_pdf(
                     pos = (ln.page, ln.y0 - 2.0)
                     if pos <= first_pos:
                         continue
-                    if _sol_marker(ln.text)[0]:
+                    if read_sol_marker(ln.text)[0]:
                         markers.append(
-                            (ln.page, ln.y0 - 2.0, _sol_marker(ln.text)[1])
+                            (ln.page, ln.y0 - 2.0, read_sol_marker(ln.text)[1])
                         )
-                if sum(1 for m in markers if (m[0], m[1]) < last_pos) >= 3:
+                if (
+                    sum(1 for m in markers if (m[0], m[1]) < last_pos)
+                    >= min_interleaved_markers
+                ):
                     interleaved = markers
 
             if interleaved:
@@ -1114,6 +1182,7 @@ def auto_split_pdf(
                         lines,
                         (last_exam.page, last_exam.y),
                         _image_item_markers(doc),
+                        read_sol_marker,
                     )
                 if sol_start is not None:
                     exam_end = (
@@ -1132,9 +1201,14 @@ def auto_split_pdf(
                     trim_after_options=trim_after_options,
                     stop_at_solution=stop_at_solution,
                     run_to_next_header=run_to_next_header,
+                    sol_marker=read_sol_marker,
+                    has_ink=_ink_probe(doc),
                 )
                 segments += _build_answer_segments(
-                    _assign_numbers(sol_headers), bounds, doc_end
+                    _assign_numbers(sol_headers),
+                    bounds,
+                    doc_end,
+                    sol_marker=read_sol_marker,
                 )
 
         out_dir.mkdir(parents=True, exist_ok=True)

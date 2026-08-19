@@ -249,6 +249,61 @@ stand on the page with nothing between them.
 `MechatronicsSplit/mechatronics-report.json` says what each sitting came out
 with.
 
+## Compressible Fluid Mechanics collection
+
+Thirteen sittings of Compressible Fluid Mechanics (036008), 2016-2025, of at
+most four open questions each.
+
+```bash
+python -m pdf_splitter.fluids "Compressable Fluid Mechanics" --out FluidsSplit
+```
+
+Nearly half the collection is still in Word, so the command exports every
+`.docx` to a PDF beside it first, through Word itself — nothing else lays the
+equations and drawn figures out the way their authors saw them. Files whose
+PDF is already there and newer are left alone, and a machine without Word is
+told which files to export by hand.
+
+No two years head their questions the same way. The Hebrew papers say either
+"שאלה 1 (30 נק')" or "תרגיל 1 - (25 נקודות)", and RTL extraction breaks the
+word itself apart ("ת רגיל 2"), so its letters are matched with space allowed
+between them. The English ones say "QUESTION #1 (25 POINTS)" or "Question 1:",
+matched at the start of a line so that "Solution for question 1:" does not read
+as the question starting over. One year prints both on the same line. And the
+2023 paper heads nothing at all: its questions are a Word list, whose number
+bidi ordering leaves at the end of the line it heads — that reading is only
+taken when the other two find nothing, since a numbered line with a weight
+beside it is otherwise an ordinary sub-section.
+
+Four papers carry their solutions. Two state each question and work it out
+immediately after ("Solution to Q1:"), and are cut on those lines; one states
+its questions in Hebrew and works them out in English, which numbers itself
+over again and is cut at the reset; one is a separate solution file. The 2021
+solution is a phone scan of handwriting with no text in it at all, so its three
+crops are written out in `SEGMENT_OVERRIDES` in `fluids.py`, as `(page, y0, y1)`
+slices in PDF points with 0-based pages. Two questions of the 2024 Moed B paper
+put nothing between statement and solution, and are cut there by hand too.
+
+What the collection cannot say about itself is which sitting a paper is. The
+headers inside the papers contradict their names — the 2022 Moed B paper is
+headed "מועד א" and the 2024 Moed B paper "Term A" — so the moed is read from
+the file name, which is consistent throughout, and only the year and season
+come from the paper: a Hebrew academic year, an English season, or the date the
+exam was held (February and March close the winter semester, July to October
+the spring one). Two sittings state no season anywhere and are listed by year
+alone. `partial solution 2019.pdf` is misnamed outright: every question it
+works out is a question of the 2021 Moed A paper — the Argon shock tube at
+p4/p1 = 3.5, the nozzle fed at 5 atm, the diamond airfoil at M = 3 — and it is
+placed there by hand.
+
+Thirteen sittings come out with 50 questions and 18 answers, every paper at the
+number of questions it carries. The rest is source-side: eight sittings are
+exam papers with no solution of any kind, the 2021 solution stops after
+question 3, the 2024 Moed A file ends with "Solution for question 4:" and an
+empty page, and the 2016 Moed A paper closes with a "פתרון המבחן" cover for
+question 3 with nothing under it. `FluidsSplit/fluids-report.json` says what
+each sitting came out with.
+
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a
