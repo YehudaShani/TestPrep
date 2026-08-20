@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam Study Viewer</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1c1e21; --muted: #6b7280;
+    --accent: #2563eb; --accent-text: #ffffff; --border: #d1d5db;
+    --answer: #059669; --flag: #d97706;
+    --done-bg: rgba(5, 150, 105, .14); --flag-bg: rgba(217, 119, 6, .14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --panel: #1f2229; --text: #e5e7eb; --muted: #9ca3af;
+      --accent: #3b82f6; --accent-text: #ffffff; --border: #374151;
+      --answer: #10b981; --flag: #f59e0b;
+      --done-bg: rgba(16, 185, 129, .2); --flag-bg: rgba(245, 158, 11, .2);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 14px; max-width: 340px;
+  }
+  #course-select { font-weight: 600; }
+  /* No background here: the select's background also paints the open popup,
+     which would tint every row green, not just the completed ones. */
+  select.complete { border-color: var(--answer); color: var(--answer); font-weight: 600; }
+  option { background: var(--panel); color: var(--text); font-weight: 400; }
+  option.complete { background: var(--done-bg); color: var(--answer); font-weight: 600; }
+  #toggle {
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    display: inline-flex;
+  }
+  #toggle button {
+    border: 0; padding: 7px 18px; font-size: 14px; cursor: pointer;
+    background: var(--panel); color: var(--muted);
+  }
+  #toggle button.active-q { background: var(--accent); color: var(--accent-text); }
+  #toggle button.active-a { background: var(--answer); color: var(--accent-text); }
+  #toggle button:disabled { opacity: .45; cursor: not-allowed; }
+  #marks {
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    display: inline-flex;
+  }
+  #marks button {
+    border: 0; padding: 7px 14px; font-size: 14px; cursor: pointer;
+    background: var(--panel); color: var(--muted);
+  }
+  #marks button.active-done { background: var(--answer); color: var(--accent-text); }
+  #marks button.active-flag { background: var(--flag); color: var(--accent-text); }
+  #btn-share, #btn-copy, #btn-full {
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
+    font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
+  }
+  #btn-share.copied, #btn-copy.copied {
+    background: var(--answer); color: var(--accent-text); border-color: var(--answer);
+  }
+  #btn-copy:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  main { flex: 1; display: flex; min-height: 0; }
+  nav {
+    width: 190px; padding: 12px; overflow-y: auto;
+    background: var(--panel); border-right: 1px solid var(--border);
+  }
+  nav h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  #qgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #qgrid button {
+    position: relative; padding: 8px 0; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text);
+    font-size: 13px; cursor: pointer;
+  }
+  #qgrid button.done { background: var(--done-bg); border-color: var(--answer); }
+  #qgrid button.flagged { background: var(--flag-bg); box-shadow: inset 0 0 0 2px var(--flag); }
+  #qgrid button.done.flagged { background: var(--done-bg); }
+  #qgrid button.current { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  #qgrid button .dot {
+    position: absolute; top: 3px; right: 4px; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--answer);
+  }
+  #viewer {
+    flex: 1; overflow: auto; padding: 20px; display: flex;
+    flex-direction: column; align-items: center; gap: 10px;
+  }
+  #status { color: var(--muted); }
+  #page-img {
+    max-width: 900px; width: 100%; background: #fff; border-radius: 6px;
+    box-shadow: 0 1px 8px rgba(0,0,0,.25);
+  }
+  #banner {
+    align-self: stretch; max-width: 900px; margin: 0 auto; width: 100%;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #banner .mode-q { color: var(--accent); font-weight: 600; }
+  #banner .mode-a { color: var(--answer); font-weight: 600; }
+  /* Some source exams simply never published a worked solution. */
+  #no-answer {
+    max-width: 900px; width: 100%; margin: 0; box-sizing: border-box;
+    padding: 28px 16px; text-align: center; color: var(--muted);
+    background: var(--panel); border: 1px dashed var(--border);
+    border-radius: 6px; font-size: 15px;
+  }
+  .navbtn {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px;
+  }
+  .navbtn:disabled { opacity: .4; cursor: not-allowed; }
+  footer {
+    padding: 6px 16px; text-align: center; font-size: 12px; color: var(--muted);
+    background: var(--panel); border-top: 1px solid var(--border);
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  /* Full screen: drop every bit of chrome and give the page the whole window.
+     Prev/Next stay in the banner and the keyboard shortcuts all still work. */
+  body.fullscreen > header, body.fullscreen nav, body.fullscreen > footer { display: none; }
+  body.fullscreen #viewer { padding: 8px 8px 56px; }
+  body.fullscreen #page-img, body.fullscreen #banner, body.fullscreen #no-answer {
+    max-width: 100%;
+  }
+  #btn-exit-full {
+    position: fixed; right: 14px; bottom: 14px; z-index: 5;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
+    font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
+    box-shadow: 0 1px 8px rgba(0,0,0,.25); opacity: .85;
+  }
+  #btn-exit-full:hover { opacity: 1; }
+  body:not(.fullscreen) #btn-exit-full { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 <span id="site-title">Exam Prep</span></h1>
+  <select id="course-select" title="Course" hidden></select>
+  <select id="exam-select" title="Exam"></select>
+  <span id="toggle">
+    <button id="btn-q">Question</button>
+    <button id="btn-a">Answer</button>
+  </span>
+  <span id="marks">
+    <button id="btn-done" title="mark as answered (D)">✓ Done</button>
+    <button id="btn-flag" title="flag as difficult (F)">⚑ Hard</button>
+  </span>
+  <button id="btn-share" title="copy a link to this question">🔗 Share</button>
+  <button id="btn-copy" title="copy question + answer as one image (C)">🖼️ Copy Q+A</button>
+  <button id="btn-full" title="fill the screen with the page (Z)">⛶ Full screen</button>
+  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard &nbsp;·&nbsp; C: copy image &nbsp;·&nbsp; Z: full screen</span>
+</header>
+<main>
+  <nav>
+    <h2>Questions</h2>
+    <div id="qgrid"></div>
+  </nav>
+  <div id="viewer" tabindex="0">
+    <div id="banner">
+      <button class="navbtn" id="prev-btn">← Prev</button>
+      <span id="status">Loading…</span>
+      <button class="navbtn" id="next-btn">Next →</button>
+    </div>
+    <img id="page-img" alt="" hidden>
+    <p id="no-answer" hidden>No answer for this question</p>
+  </div>
+</main>
+<button id="btn-exit-full" title="leave full screen (Z or Esc)">⤢ Exit full screen</button>
+<footer>This is a tool to help prepare for exams. Let me know what you think and if there are other courses you would like to use this for :) &nbsp;<a href="mailto:yehuda.shani@campus.technion.ac.il">yehuda.shani@campus.technion.ac.il</a></footer>
+<script>
+"use strict";
+// Flipped to true by build_site.py: images and exams.json are then static
+// files and progress lives in each visitor's localStorage.
+window.STATIC_SITE = true;
+window.STUDY_CONFIG = {"title":"Exam Prep","courses":[{"id":"circuits","title":"Electrical Circuits","storageKey":"study-progress","assetVersion":"1784453925329577000"},{"id":"physics3","title":"Physics 3","storageKey":"physics3-study-progress","assetVersion":"1785157904657659500"},{"id":"signals","title":"Signals & Systems","storageKey":"signals-study-progress","assetVersion":"1785331830235739000"},{"id":"medical","title":"Medical Imaging","storageKey":"medical-study-progress","assetVersion":"1785332367522290500"},{"id":"probability","title":"Probability","storageKey":"probability-study-progress","assetVersion":"1785406819507937600"},{"id":"mechatronics","title":"Intro to Mechatronics","storageKey":"mechatronics-study-progress","assetVersion":"1785920832564861000"},{"id":"fluids","title":"Compressible Fluid Mechanics","storageKey":"fluids-study-progress","assetVersion":"1787145577099299400"},{"id":"fluids-exercises","title":"Compressible Fluid Mechanics — Exercises","storageKey":"fluids-exercises-study-progress","assetVersion":"1787212380466608000"}],"analytics":"testprepper"};
+const STATIC = window.STATIC_SITE;
+const CONFIG = window.STUDY_CONFIG;
+const COURSES = CONFIG.courses;
+// Which course the visitor last studied; their marks stay per course.
+const COURSE_KEY = "study-course";
+let exams = [];
+let progress = {};
+let state = { course: COURSES[0].id, exam: null, n: null, mode: "q" };
+const examCache = {};
+const progressCache = {};
+
+// Visit counting, enabled only when the static build passes a GoatCounter
+// site code (see courses.py) — the local server never does. count.js records
+// the visit on load; countView() adds a hit per exam opened, once each, so
+// stepping through questions does not flood the counter.
+const countView = (() => {
+  const code = CONFIG.analytics;
+  if (!code) return () => {};
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://gc.zgo.at/count.js";
+  script.dataset.goatcounter = "https://" + code + ".goatcounter.com/count";
+  document.head.appendChild(script);
+  const base = location.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/");
+  const seen = new Set();
+  // Hits raised before count.js arrives wait here; if it never does (blocked),
+  // the seen-set keeps the queue to one entry per exam.
+  const pending = [];
+  const flush = () => {
+    while (window.goatcounter && window.goatcounter.count && pending.length) {
+      window.goatcounter.count(pending.shift());
+    }
+  };
+  script.addEventListener("load", flush);
+  return (path, title) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    pending.push({ path: base + path, title: title });
+    flush();
+  };
+})();
+
+const $ = (id) => document.getElementById(id);
+$("site-title").textContent = CONFIG.title;
+const pad = (n) => String(n).padStart(2, "0");
+const fileFor = (mode, n) => (mode === "q" ? "question_" : "answer_") + pad(n) + ".pdf";
+
+function currentCourse() {
+  return COURSES.find((c) => c.id === state.course) || COURSES[0];
+}
+
+function renderUrl(exam, mode, n) {
+  const course = currentCourse();
+  if (!STATIC) {
+    return "/api/render?course=" + encodeURIComponent(course.id)
+      + "&exam=" + encodeURIComponent(exam.dir)
+      + "&file=" + encodeURIComponent(fileFor(mode, n));
+  }
+  const version = course.assetVersion || "";
+  return encodeURIComponent(course.id) + "/img/" + encodeURIComponent(exam.dir) + "/"
+    + (mode === "q" ? "question_" : "answer_") + pad(n) + ".webp"
+    + (version ? "?v=" + encodeURIComponent(version) : "");
+}
+
+function currentExam() {
+  return exams.find((e) => e.dir === state.exam) || null;
+}
+
+function hasAnswer(exam, n) {
+  return exam && exam.answers.includes(n);
+}
+
+function markOf(dir, n) {
+  return (progress[dir] || {})[n] || {};
+}
+
+function saveMark(done, flagged) {
+  const dir = state.exam;
+  const n = state.n;
+  if (!dir || n === null) return;
+  if (done || flagged) {
+    (progress[dir] = progress[dir] || {})[n] = { done, flagged };
+  } else if (progress[dir]) {
+    delete progress[dir][n];
+  }
+  if (STATIC) {
+    localStorage.setItem(currentCourse().storageKey, JSON.stringify(progress));
+  } else {
+    fetch("/api/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course: state.course, exam: dir, n, done, flagged }),
+    });
+  }
+  refreshMarks();
+}
+
+function toggleDone() {
+  const m = markOf(state.exam, state.n);
+  saveMark(!m.done, !!m.flagged);
+}
+
+function toggleFlag() {
+  const m = markOf(state.exam, state.n);
+  saveMark(!!m.done, !m.flagged);
+}
+
+function doneCount(exam) {
+  const marks = progress[exam.dir] || {};
+  return exam.questions.filter((n) => marks[n] && marks[n].done).length;
+}
+
+function isComplete(exam) {
+  return exam.questions.length > 0 && doneCount(exam) === exam.questions.length;
+}
+
+function optionLabel(exam) {
+  // Safari ignores option background-color, so completion also shows in the text.
+  return (isComplete(exam) ? "✅ " : "") + exam.label +
+    " (" + doneCount(exam) + "/" + exam.questions.length + " ✓)";
+}
+
+function refreshMarks() {
+  const exam = currentExam();
+  if (!exam) return;
+  for (const btn of $("qgrid").children) {
+    const m = markOf(exam.dir, Number(btn.dataset.n));
+    btn.classList.toggle("done", !!m.done);
+    btn.classList.toggle("flagged", !!m.flagged);
+  }
+  const m = markOf(exam.dir, state.n);
+  $("btn-done").className = m.done ? "active-done" : "";
+  $("btn-flag").className = m.flagged ? "active-flag" : "";
+  const sel = $("exam-select");
+  for (const opt of sel.options) {
+    const e = exams.find((x) => x.dir === opt.value);
+    if (!e) continue;
+    opt.textContent = optionLabel(e);
+    opt.classList.toggle("complete", isComplete(e));
+  }
+  sel.classList.toggle("complete", isComplete(exam));
+}
+
+function show() {
+  const exam = currentExam();
+  if (!exam || state.n === null) return;
+  const img = $("page-img");
+  // A question whose source exam never published a solution shows a notice in
+  // place of the image, rather than a dead Answer button.
+  const missing = state.mode === "a" && !hasAnswer(exam, state.n);
+  img.hidden = missing;
+  $("no-answer").hidden = !missing;
+  if (!missing) img.src = renderUrl(exam, state.mode, state.n);
+  const label = state.mode === "q" ? "Question" : "Answer";
+  $("status").innerHTML =
+    '<span class="mode-' + state.mode + '">' + label + " " + state.n + "</span>" +
+    ' <span>· ' + exam.label + "</span>" +
+    (state.mode === "q" && !hasAnswer(exam, state.n) ? " · <em>no answer</em>" : "");
+  $("btn-q").className = state.mode === "q" ? "active-q" : "";
+  $("btn-a").className = state.mode === "a" ? "active-a" : "";
+  const idx = exam.questions.indexOf(state.n);
+  $("prev-btn").disabled = idx <= 0;
+  $("next-btn").disabled = idx >= exam.questions.length - 1;
+  for (const btn of $("qgrid").children) {
+    btn.classList.toggle("current", Number(btn.dataset.n) === state.n);
+  }
+  // Preload the counterpart so toggling is instant.
+  const other = state.mode === "q" ? "a" : "q";
+  if (other === "q" || hasAnswer(exam, state.n)) {
+    new Image().src = renderUrl(exam, other, state.n);
+  }
+  history.replaceState(null, "", "#" + encodeURIComponent(state.course) + "/"
+    + encodeURIComponent(state.exam) + "/" + state.n + "/" + state.mode);
+  // Every route into an exam ends here, so this is the one place worth counting.
+  countView(state.course + "/" + state.exam, currentCourse().title + " · " + exam.label);
+  refreshMarks();
+}
+
+// Deep link: #<course>/<exam-dir>/<question>[/<q|a>], kept in sync by show().
+function parseHash() {
+  const m = /^#([^/]+)\/([^/]+)\/(\d+)(?:\/(q|a))?$/.exec(location.hash);
+  if (m) {
+    return {
+      course: decodeURIComponent(m[1]),
+      dir: decodeURIComponent(m[2]),
+      n: Number(m[3]),
+      mode: m[4] === "a" ? "a" : "q",
+    };
+  }
+  // Links shared before the site carried more than one course.
+  const old = /^#([^/]+)\/(\d+)(?:\/(q|a))?$/.exec(location.hash);
+  if (old) {
+    return {
+      course: COURSES[0].id,
+      dir: decodeURIComponent(old[1]),
+      n: Number(old[2]),
+      mode: old[3] === "a" ? "a" : "q",
+    };
+  }
+  return null;
+}
+
+function applyHash() {
+  const target = parseHash();
+  if (!target || !COURSES.some((c) => c.id === target.course)) {
+    return Promise.resolve(false);
+  }
+  return loadCourse(target.course).then(() => {
+    const exam = exams.find((e) => e.dir === target.dir);
+    if (!exam || !exam.questions.includes(target.n)) {
+      selectExam(exams.length ? exams[0].dir : null);
+      return true;
+    }
+    state.exam = target.dir;
+    $("exam-select").value = target.dir;
+    buildGrid();
+    selectQuestion(target.n, target.mode);
+    return true;
+  });
+}
+
+function selectQuestion(n, mode) {
+  state.n = n;
+  state.mode = mode || "q";
+  show();
+}
+
+function buildGrid() {
+  const exam = currentExam();
+  const grid = $("qgrid");
+  grid.innerHTML = "";
+  if (!exam) return;
+  for (const n of exam.questions) {
+    const btn = document.createElement("button");
+    btn.dataset.n = n;
+    btn.textContent = n;
+    if (hasAnswer(exam, n)) {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.title = "answer available";
+      btn.appendChild(dot);
+    }
+    btn.onclick = () => selectQuestion(n);
+    grid.appendChild(btn);
+  }
+}
+
+function selectExam(dir) {
+  state.exam = dir;
+  $("exam-select").value = dir || "";
+  buildGrid();
+  const exam = currentExam();
+  selectQuestion(exam ? exam.questions[0] : null);
+}
+
+function fillExamSelect() {
+  const sel = $("exam-select");
+  sel.innerHTML = "";
+  for (const e of exams) {
+    const opt = document.createElement("option");
+    opt.value = e.dir;
+    opt.textContent = optionLabel(e);
+    opt.classList.toggle("complete", isComplete(e));
+    sel.appendChild(opt);
+  }
+}
+
+function fetchExams(id) {
+  if (examCache[id]) return Promise.resolve(examCache[id]);
+  const url = STATIC
+    ? encodeURIComponent(id) + "/exams.json"
+    : "/api/exams?course=" + encodeURIComponent(id);
+  return fetch(url).then((r) => r.json()).then((data) => (examCache[id] = data));
+}
+
+function fetchProgress(id) {
+  if (progressCache[id]) return Promise.resolve(progressCache[id]);
+  if (!STATIC) {
+    return fetch("/api/progress?course=" + encodeURIComponent(id))
+      .then((r) => r.json())
+      .then((data) => (progressCache[id] = data));
+  }
+  const course = COURSES.find((c) => c.id === id);
+  let stored = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(course.storageKey) || "{}");
+  } catch (err) {
+    stored = {};
+  }
+  return Promise.resolve((progressCache[id] = stored));
+}
+
+// Each course keeps its own exam list and its own marks; both are fetched
+// once and then cached, so switching back and forth is instant.
+function loadCourse(id) {
+  return Promise.all([fetchExams(id), fetchProgress(id)]).then(([data, prog]) => {
+    state.course = id;
+    exams = data;
+    progress = prog;
+    $("course-select").value = id;
+    document.title =
+      (COURSES.length > 1 ? currentCourse().title + " · " : "") + CONFIG.title;
+    try {
+      localStorage.setItem(COURSE_KEY, id);
+    } catch (err) {
+      /* private browsing: remembering the course is optional */
+    }
+    fillExamSelect();
+  });
+}
+
+function selectCourse(id) {
+  return loadCourse(id).then(() => {
+    if (exams.length) selectExam(exams[0].dir);
+    else {
+      state.exam = null;
+      buildGrid();
+      $("page-img").hidden = true;
+      $("status").textContent = "No exams available for this course yet.";
+    }
+  });
+}
+
+function step(delta) {
+  const exam = currentExam();
+  if (!exam) return;
+  const idx = exam.questions.indexOf(state.n) + delta;
+  if (idx >= 0 && idx < exam.questions.length) selectQuestion(exam.questions[idx]);
+}
+
+function toggleMode() {
+  state.mode = state.mode === "q" ? "a" : "q";
+  show();
+}
+
+// Blur after click so a focused button never swallows the Space shortcut.
+$("btn-q").onclick = (e) => { state.mode = "q"; show(); e.currentTarget.blur(); };
+$("btn-a").onclick = (e) => { state.mode = "a"; show(); e.currentTarget.blur(); };
+$("btn-done").onclick = (e) => { toggleDone(); e.currentTarget.blur(); };
+$("btn-flag").onclick = (e) => { toggleFlag(); e.currentTarget.blur(); };
+$("prev-btn").onclick = (e) => { step(-1); e.currentTarget.blur(); };
+$("next-btn").onclick = (e) => { step(1); e.currentTarget.blur(); };
+$("exam-select").onchange = (e) => { selectExam(e.target.value); e.target.blur(); };
+$("course-select").onchange = (e) => { selectCourse(e.target.value); e.target.blur(); };
+function copyToClipboard(text) {
+  const viaCommand = () => new Promise((resolve, reject) => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    ok ? resolve() : reject(new Error("copy failed"));
+  });
+  return navigator.clipboard
+    ? navigator.clipboard.writeText(text).catch(viaCommand)
+    : viaCommand();
+}
+
+// "Copy Q+A" stitches the question and its answer into a single PNG: one
+// paste then carries the whole thing into a chat, and the pair cannot get
+// separated on the way. Sizes are capped so a solution stitched from a dozen
+// source pages still fits in a canvas the browser will allocate.
+const COPY_GAP = 24;
+const COPY_MAX_W = 1400;
+const COPY_MAX_H = 20000;
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("could not load " + src));
+    img.src = src;
+  });
+}
+
+function stitchImages(images) {
+  let width = Math.min(COPY_MAX_W, Math.max(...images.map((i) => i.naturalWidth)));
+  const heightAt = (w) =>
+    images.reduce((sum, i) => sum + Math.round((i.naturalHeight * w) / i.naturalWidth), 0)
+    + COPY_GAP * (images.length - 1);
+  const tall = heightAt(width);
+  if (tall > COPY_MAX_H) width = Math.max(1, Math.floor((width * COPY_MAX_H) / tall));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = heightAt(width);
+  const ctx = canvas.getContext("2d");
+  // Pages are transparent where the PDF left them blank; chats vary in
+  // background colour, so paint paper white underneath.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let y = 0;
+  for (const img of images) {
+    const h = Math.round((img.naturalHeight * width) / img.naturalWidth);
+    ctx.drawImage(img, 0, y, width, h);
+    y += h + COPY_GAP;
+  }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("encode failed"))), "image/png");
+  });
+}
+
+function combinedImage() {
+  const exam = currentExam();
+  const urls = [renderUrl(exam, "q", state.n)];
+  if (hasAnswer(exam, state.n)) urls.push(renderUrl(exam, "a", state.n));
+  return Promise.all(urls.map(loadImage)).then(stitchImages);
+}
+
+// Browsers without image support on the clipboard (and any denied permission)
+// fall back to saving the same PNG, which is still shareable.
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function copyQuestionAndAnswer() {
+  const btn = $("btn-copy");
+  const exam = currentExam();
+  if (!exam || state.n === null || btn.disabled) return;
+  const name = exam.dir + "-" + pad(state.n) + ".png";
+  const finish = (text, ok) => {
+    btn.textContent = text;
+    btn.classList.toggle("copied", !!ok);
+    btn.disabled = false;
+    setTimeout(() => {
+      btn.textContent = "🖼️ Copy Q+A";
+      btn.classList.remove("copied");
+    }, 1800);
+  };
+  btn.disabled = true;
+  btn.textContent = "Copying…";
+  // Safari only honours a clipboard write started in the click's own turn, so
+  // the ClipboardItem is built here and handed the still-pending blob.
+  const blob = combinedImage();
+  const written = window.ClipboardItem && navigator.clipboard && navigator.clipboard.write
+    ? navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+    : Promise.reject(new Error("clipboard images unsupported"));
+  written
+    .then(() => finish("✓ Copied!", true))
+    .catch(() =>
+      blob
+        .then((b) => {
+          saveBlob(b, name);
+          finish("⬇ Saved image");
+        })
+        .catch(() => finish("Copy failed"))
+    );
+}
+
+$("btn-copy").onclick = (e) => { copyQuestionAndAnswer(); e.currentTarget.blur(); };
+
+// Full screen hides the chrome and lets the page image use the whole window.
+// The Fullscreen API is a bonus on top: where the browser refuses it (or does
+// not have it), the class alone still gives a chrome-free view in the tab, so
+// the button always does something.
+function browserFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function applyFullscreen(on) {
+  document.body.classList.toggle("fullscreen", on);
+  $("btn-full").textContent = on ? "⤢ Exit full screen" : "⛶ Full screen";
+}
+
+function toggleFullscreen() {
+  const on = !document.body.classList.contains("fullscreen");
+  applyFullscreen(on);
+  const el = document.documentElement;
+  const call = (fn, target) => {
+    if (!fn) return;
+    const done = fn.call(target);
+    if (done && done.catch) done.catch(() => {});
+  };
+  if (on) call(el.requestFullscreen || el.webkitRequestFullscreen, el);
+  else if (browserFullscreen()) {
+    call(document.exitFullscreen || document.webkitExitFullscreen, document);
+  }
+}
+
+// Esc and F11 leave the browser's full screen behind the button's back; follow
+// them back out of the layout too.
+const onFullscreenChange = () => { if (!browserFullscreen()) applyFullscreen(false); };
+document.addEventListener("fullscreenchange", onFullscreenChange);
+document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+
+$("btn-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur(); };
+$("btn-exit-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur(); };
+
+$("btn-share").onclick = (e) => {
+  const btn = e.currentTarget;
+  copyToClipboard(location.href)
+    .then(() => { btn.textContent = "✓ Copied!"; btn.classList.add("copied"); })
+    .catch(() => { btn.textContent = "Copy failed"; })
+    .then(() => setTimeout(() => {
+      btn.textContent = "🔗 Share";
+      btn.classList.remove("copied");
+    }, 1500));
+  btn.blur();
+};
+window.addEventListener("hashchange", applyHash);
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === "Space") { e.preventDefault(); toggleMode(); }
+  else if (e.key === "ArrowRight") step(1);
+  else if (e.key === "ArrowLeft") step(-1);
+  else if (e.code === "KeyD") toggleDone();
+  else if (e.code === "KeyF") toggleFlag();
+  else if (e.code === "KeyC") copyQuestionAndAnswer();
+  else if (e.code === "KeyZ") toggleFullscreen();
+  // Esc only reaches here when the layout is full screen without the browser
+  // being — otherwise the browser eats it and fullscreenchange handles it.
+  else if (e.key === "Escape" && document.body.classList.contains("fullscreen")) {
+    toggleFullscreen();
+  }
+});
+
+const courseSelect = $("course-select");
+for (const c of COURSES) {
+  const opt = document.createElement("option");
+  opt.value = c.id;
+  opt.textContent = c.title;
+  courseSelect.appendChild(opt);
+}
+courseSelect.hidden = COURSES.length < 2;
+
+let remembered = null;
+try {
+  remembered = localStorage.getItem(COURSE_KEY);
+} catch (err) {
+  remembered = null;
+}
+const initialCourse = COURSES.some((c) => c.id === remembered)
+  ? remembered
+  : COURSES[0].id;
+
+applyHash().then((handled) => (handled ? null : selectCourse(initialCourse)));
+</script>
+</body>
+</html>
