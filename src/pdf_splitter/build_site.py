@@ -159,7 +159,11 @@ def build_course(course: Course, root: Path, out: Path, dpi: int) -> dict:
 
 
 def build(courses: list[Course], out: Path, dpi: int, *, base: Path) -> None:
-    auth = auth_config()
+    # Browser credentials are public and belong with the deployment settings.
+    # Keep sign-in configured across build sessions without shell variables.
+    auth_path = base / "site-auth.json"
+    defaults = json.loads(auth_path.read_text(encoding="utf-8")) if auth_path.exists() else {}
+    auth = auth_config(defaults)
     page = Path(__file__).with_name("study.html").read_text(encoding="utf-8")
     if STATIC_FLAG not in page:
         raise SystemExit("study.html is missing the STATIC_SITE flag")

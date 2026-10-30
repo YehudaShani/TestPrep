@@ -42,6 +42,11 @@ ignored, with no import.
    The build embeds these public settings in index.html. Do not deploy until
    the checks below pass. Without settings, the viewer supports guest use only.
 
+   Static builds also read `site-auth.json` in the project root, containing
+   `url` and `publishableKey`. This file stores only public browser settings and
+   keeps deployed sign-in working between shell sessions. Environment variables
+   override these saved values. Never put private keys in this file.
+
 ## Verify with real accounts before deploying
 
 ### Course requests

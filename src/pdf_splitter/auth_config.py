@@ -3,9 +3,10 @@
 import os
 
 
-def auth_config() -> dict:
-    url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
-    key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+def auth_config(defaults: dict | None = None) -> dict:
+    defaults = defaults or {}
+    url = os.environ.get("SUPABASE_URL", defaults.get("url", "")).strip().rstrip("/")
+    key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", defaults.get("publishableKey", "")).strip()
     if bool(url) != bool(key):
         raise ValueError("Set both SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY")
     if key.startswith("sb_secret_"):

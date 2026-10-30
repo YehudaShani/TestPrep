@@ -29,6 +29,32 @@ def test_public_configuration(monkeypatch):
     }
 
 
+def test_saved_public_configuration_is_validated_and_environment_overrides_it(monkeypatch):
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_PUBLISHABLE_KEY", raising=False)
+    saved = {"url": "https://saved.supabase.co", "publishableKey": "sb_publishable_saved"}
+    assert auth_config(saved) == saved
+    with pytest.raises(ValueError):
+        auth_config({**saved, "publishableKey": "sb_secret_private"})
+    monkeypatch.setenv("SUPABASE_URL", "https://override.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_override")
+    assert auth_config(saved)["url"] == "https://override.supabase.co"
+
+
+def test_static_rebuild_keeps_saved_sign_in_without_environment(monkeypatch, tmp_path):
+    from pdf_splitter.build_site import build
+
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_PUBLISHABLE_KEY", raising=False)
+    saved = {"url": "https://saved.supabase.co", "publishableKey": "sb_publishable_saved"}
+    (tmp_path / "site-auth.json").write_text(json.dumps(saved), encoding="utf-8")
+    out = tmp_path / "site"
+    build([], out, 30, base=tmp_path)
+    build([], out, 30, base=tmp_path)
+    config = json.loads(re.search(r"window.STUDY_CONFIG = (.*);", (out / "index.html").read_text(encoding="utf-8"))[1])
+    assert config["auth"] == saved
+
+
 def test_local_page_embeds_auth_at_the_top_level(monkeypatch, tmp_path):
     from pdf_splitter.courses import Course
     from pdf_splitter.study_server import ServedCourse, StudyHandler
