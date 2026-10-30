@@ -36,6 +36,11 @@
     border-radius: 6px; padding: 6px 10px; font-size: 14px; max-width: 340px;
   }
   #course-select { font-weight: 600; }
+  /* No background here: the select's background also paints the open popup,
+     which would tint every row green, not just the completed ones. */
+  select.complete { border-color: var(--answer); color: var(--answer); font-weight: 600; }
+  option { background: var(--panel); color: var(--text); font-weight: 400; }
+  option.complete { background: var(--done-bg); color: var(--answer); font-weight: 600; }
   #toggle {
     border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
     display: inline-flex;
@@ -57,7 +62,7 @@
   }
   #marks button.active-done { background: var(--answer); color: var(--accent-text); }
   #marks button.active-flag { background: var(--flag); color: var(--accent-text); }
-  #btn-share, #btn-copy {
+  #btn-share, #btn-copy, #btn-full {
     border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
     font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
   }
@@ -118,6 +123,21 @@
     background: var(--panel); border-top: 1px solid var(--border);
   }
   footer a { color: var(--accent); text-decoration: none; }
+  /* Full screen: drop every bit of chrome and give the page the whole window.
+     Prev/Next stay in the banner and the keyboard shortcuts all still work. */
+  body.fullscreen > header, body.fullscreen nav, body.fullscreen > footer { display: none; }
+  body.fullscreen #viewer { padding: 8px 8px 56px; }
+  body.fullscreen #page-img, body.fullscreen #banner, body.fullscreen #no-answer {
+    max-width: 100%;
+  }
+  #btn-exit-full {
+    position: fixed; right: 14px; bottom: 14px; z-index: 5;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
+    font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
+    box-shadow: 0 1px 8px rgba(0,0,0,.25); opacity: .85;
+  }
+  #btn-exit-full:hover { opacity: 1; }
+  body:not(.fullscreen) #btn-exit-full { display: none; }
 </style>
 </head>
 <body>
@@ -135,7 +155,8 @@
   </span>
   <button id="btn-share" title="copy a link to this question">🔗 Share</button>
   <button id="btn-copy" title="copy question + answer as one image (C)">🖼️ Copy Q+A</button>
-  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard &nbsp;·&nbsp; C: copy image</span>
+  <button id="btn-full" title="fill the screen with the page (Z)">⛶ Full screen</button>
+  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard &nbsp;·&nbsp; C: copy image &nbsp;·&nbsp; Z: full screen</span>
 </header>
 <main>
   <nav>
@@ -152,6 +173,7 @@
     <p id="no-answer" hidden>No answer for this question</p>
   </div>
 </main>
+<button id="btn-exit-full" title="leave full screen (Z or Esc)">⤢ Exit full screen</button>
 <footer>This is a tool to help prepare for exams. Let me know what you think and if there are other courses you would like to use this for :) &nbsp;<a href="mailto:yehuda.shani@campus.technion.ac.il">yehuda.shani@campus.technion.ac.il</a></footer>
 <script>
 "use strict";
@@ -271,8 +293,14 @@ function doneCount(exam) {
   return exam.questions.filter((n) => marks[n] && marks[n].done).length;
 }
 
+function isComplete(exam) {
+  return exam.questions.length > 0 && doneCount(exam) === exam.questions.length;
+}
+
 function optionLabel(exam) {
-  return exam.label + " (" + doneCount(exam) + "/" + exam.questions.length + " ✓)";
+  // Safari ignores option background-color, so completion also shows in the text.
+  return (isComplete(exam) ? "✅ " : "") + exam.label +
+    " (" + doneCount(exam) + "/" + exam.questions.length + " ✓)";
 }
 
 function refreshMarks() {
@@ -286,10 +314,14 @@ function refreshMarks() {
   const m = markOf(exam.dir, state.n);
   $("btn-done").className = m.done ? "active-done" : "";
   $("btn-flag").className = m.flagged ? "active-flag" : "";
-  for (const opt of $("exam-select").options) {
+  const sel = $("exam-select");
+  for (const opt of sel.options) {
     const e = exams.find((x) => x.dir === opt.value);
-    if (e) opt.textContent = optionLabel(e);
+    if (!e) continue;
+    opt.textContent = optionLabel(e);
+    opt.classList.toggle("complete", isComplete(e));
   }
+  sel.classList.toggle("complete", isComplete(exam));
 }
 
 function show() {
@@ -410,7 +442,8 @@ function fillExamSelect() {
   for (const e of exams) {
     const opt = document.createElement("option");
     opt.value = e.dir;
-    opt.textContent = e.label + " (" + e.questions.length + " questions)";
+    opt.textContent = optionLabel(e);
+    opt.classList.toggle("complete", isComplete(e));
     sel.appendChild(opt);
   }
 }
@@ -606,6 +639,43 @@ function copyQuestionAndAnswer() {
 
 $("btn-copy").onclick = (e) => { copyQuestionAndAnswer(); e.currentTarget.blur(); };
 
+// Full screen hides the chrome and lets the page image use the whole window.
+// The Fullscreen API is a bonus on top: where the browser refuses it (or does
+// not have it), the class alone still gives a chrome-free view in the tab, so
+// the button always does something.
+function browserFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function applyFullscreen(on) {
+  document.body.classList.toggle("fullscreen", on);
+  $("btn-full").textContent = on ? "⤢ Exit full screen" : "⛶ Full screen";
+}
+
+function toggleFullscreen() {
+  const on = !document.body.classList.contains("fullscreen");
+  applyFullscreen(on);
+  const el = document.documentElement;
+  const call = (fn, target) => {
+    if (!fn) return;
+    const done = fn.call(target);
+    if (done && done.catch) done.catch(() => {});
+  };
+  if (on) call(el.requestFullscreen || el.webkitRequestFullscreen, el);
+  else if (browserFullscreen()) {
+    call(document.exitFullscreen || document.webkitExitFullscreen, document);
+  }
+}
+
+// Esc and F11 leave the browser's full screen behind the button's back; follow
+// them back out of the layout too.
+const onFullscreenChange = () => { if (!browserFullscreen()) applyFullscreen(false); };
+document.addEventListener("fullscreenchange", onFullscreenChange);
+document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+
+$("btn-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur(); };
+$("btn-exit-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur(); };
+
 $("btn-share").onclick = (e) => {
   const btn = e.currentTarget;
   copyToClipboard(location.href)
@@ -627,6 +697,12 @@ document.addEventListener("keydown", (e) => {
   else if (e.code === "KeyD") toggleDone();
   else if (e.code === "KeyF") toggleFlag();
   else if (e.code === "KeyC") copyQuestionAndAnswer();
+  else if (e.code === "KeyZ") toggleFullscreen();
+  // Esc only reaches here when the layout is full screen without the browser
+  // being — otherwise the browser eats it and fullscreenchange handles it.
+  else if (e.key === "Escape" && document.body.classList.contains("fullscreen")) {
+    toggleFullscreen();
+  }
 });
 
 const courseSelect = $("course-select");
