@@ -26,16 +26,23 @@
     font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
   }
   header {
-    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    display: flex; flex-wrap: nowrap;
+    align-items: center; gap: 8px; padding: 8px 12px;
     background: var(--panel); border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
   }
-  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  .study-controls {
+    display: flex; align-items: center; flex: 1; min-width: 0;
+    gap: 6px; flex-wrap: nowrap; overflow-x: auto;
+  }
+  .study-controls > * { flex-shrink: 0; }
+  header h1 { flex-shrink: 0; font-size: 16px; margin: 0; white-space: nowrap; }
+  header button { white-space: nowrap; }
   select {
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 10px; font-size: 14px; max-width: 340px;
   }
   #course-select { font-weight: 600; }
+  .study-controls select { flex: 1 1 180px; width: 180px; min-width: 95px; max-width: 280px; }
   /* No background here: the select's background also paints the open popup,
      which would tint every row green, not just the completed ones. */
   select.complete { border-color: var(--answer); color: var(--answer); font-weight: 600; }
@@ -46,7 +53,7 @@
     display: inline-flex;
   }
   #toggle button {
-    border: 0; padding: 7px 18px; font-size: 14px; cursor: pointer;
+    border: 0; padding: 7px 10px; font-size: 14px; cursor: pointer;
     background: var(--panel); color: var(--muted);
   }
   #toggle button.active-q { background: var(--accent); color: var(--accent-text); }
@@ -62,6 +69,7 @@
   }
   #marks button.active-done { background: var(--answer); color: var(--accent-text); }
   #marks button.active-flag { background: var(--flag); color: var(--accent-text); }
+  #marks button:disabled { opacity: .45; cursor: not-allowed; }
   #btn-share, #btn-copy, #btn-full {
     border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
     font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
@@ -70,13 +78,35 @@
     background: var(--answer); color: var(--accent-text); border-color: var(--answer);
   }
   #btn-copy:disabled { opacity: .5; cursor: default; }
-  .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  @media (max-width: 1200px) {
+    .button-label { display: none; }
+    #marks button, #btn-share, #btn-copy, #btn-full { padding: 7px 9px; }
+  }
+  @media (max-width: 1000px) {
+    header h1 { display: none; }
+  }
   main { flex: 1; display: flex; min-height: 0; }
   nav {
-    width: 190px; padding: 12px; overflow-y: auto;
+    width: 190px; flex-shrink: 0; padding: 12px; overflow-y: auto;
     background: var(--panel); border-right: 1px solid var(--border);
   }
   nav h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .sidebar-shortcuts {
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+  }
+  .sidebar-shortcuts h2 { font-size: 10px; margin-bottom: 6px; }
+  .sidebar-shortcuts dl {
+    display: grid; grid-template-columns: auto 1fr; align-items: center;
+    gap: 3px 7px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.3;
+  }
+  .sidebar-shortcuts dt, .sidebar-shortcuts dd { margin: 0; }
+  .sidebar-shortcuts kbd {
+    display: inline-block; min-width: 20px; padding: 0 4px;
+    border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg); color: var(--text); font: inherit; text-align: center;
+  }
+  #btn-request-courses { width: 100%; margin-top: 12px; padding: 7px 6px; }
+  #btn-sidebar { flex-shrink: 0; padding: 5px 8px; font-size: 17px; line-height: 1.2; }
   #qgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   #qgrid button {
     position: relative; padding: 8px 0; border: 1px solid var(--border);
@@ -138,11 +168,17 @@
   }
   #btn-exit-full:hover { opacity: 1; }
   body:not(.fullscreen) #btn-exit-full { display: none; }
+  #account { display: inline-flex; align-items: center; flex-shrink: 0; margin-left: auto; }
+  #notice { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  #notice[hidden] { display: none; }
+  #notice button { margin-left: 10px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>📚 <span id="site-title">Exam Prep</span></h1>
+  <button class="navbtn" id="btn-sidebar" aria-controls="question-sidebar" aria-expanded="true" aria-label="Hide question sidebar" title="Hide question sidebar">☰</button>
+  <h1><span id="site-title">Exam Prep</span></h1>
+  <div class="study-controls">
   <select id="course-select" title="Course" hidden></select>
   <select id="exam-select" title="Exam"></select>
   <span id="toggle">
@@ -150,18 +186,40 @@
     <button id="btn-a">Answer</button>
   </span>
   <span id="marks">
-    <button id="btn-done" title="mark as answered (D)">✓ Done</button>
-    <button id="btn-flag" title="flag as difficult (F)">⚑ Hard</button>
+    <button id="btn-done" title="mark as answered (D)" aria-label="Done">✓<span class="button-label"> Done</span></button>
+    <button id="btn-flag" title="flag as difficult (F)" aria-label="Hard">⚑<span class="button-label"> Hard</span></button>
   </span>
-  <button id="btn-share" title="copy a link to this question">🔗 Share</button>
-  <button id="btn-copy" title="copy question + answer as one image (C)">🖼️ Copy Q+A</button>
-  <button id="btn-full" title="fill the screen with the page (Z)">⛶ Full screen</button>
-  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard &nbsp;·&nbsp; C: copy image &nbsp;·&nbsp; Z: full screen</span>
+  <button id="btn-share" aria-label="Share" title="copy a link to this question">🔗<span class="button-label"> Share</span></button>
+  <button id="btn-copy" aria-label="Copy question and answer" title="copy question + answer as one image (C)">🖼️<span class="button-label"> Copy Q+A</span></button>
+  <button id="btn-full" aria-label="Full screen" title="fill the screen with the page (Z)">⛶<span class="button-label"> Full screen</span></button>
+  </div>
+  <span id="account">
+    <button class="navbtn" id="btn-sign-in" disabled>Sign in with Google</button>
+    <button class="navbtn" id="btn-sign-out" hidden>Sign out</button>
+  </span>
 </header>
+<div id="notice" role="status" aria-live="polite" hidden>
+  <span id="notice-text"></span>
+  <button class="navbtn" id="notice-action" hidden></button>
+  <button class="navbtn" id="notice-dismiss" aria-label="Dismiss notice">Dismiss</button>
+</div>
 <main>
-  <nav>
+  <nav id="question-sidebar" aria-label="Questions">
     <h2>Questions</h2>
     <div id="qgrid"></div>
+    <section class="sidebar-shortcuts" aria-labelledby="shortcuts-title">
+      <h2 id="shortcuts-title">Shortcuts</h2>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>Question / answer</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next</dd>
+        <dt><kbd>D</kbd></dt><dd>Mark done</dd>
+        <dt><kbd>F</kbd></dt><dd>Mark hard</dd>
+        <dt><kbd>C</kbd></dt><dd>Copy Q+A image</dd>
+        <dt><kbd>Z</kbd></dt><dd>Full screen</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Exit full screen</dd>
+      </dl>
+    </section>
+    <button class="navbtn" id="btn-request-courses" disabled title="Coming soon">Request more courses</button>
   </nav>
   <div id="viewer" tabindex="0">
     <div id="banner">
@@ -178,7 +236,7 @@
 <script>
 "use strict";
 // Flipped to true by build_site.py: images and exams.json are then static
-// files and progress lives in each visitor's localStorage.
+// files. Progress is private to signed-in users; guest marks live in memory.
 window.STATIC_SITE = false;
 window.STUDY_CONFIG = {"title":"Exam Prep","courses":[{"id":"circuits","title":"Electrical Circuits","storageKey":"study-progress","assetVersion":""}]};
 const STATIC = window.STATIC_SITE;
@@ -187,10 +245,20 @@ const COURSES = CONFIG.courses;
 // Which course the visitor last studied; their marks stay per course.
 const COURSE_KEY = "study-course";
 let exams = [];
-let progress = {};
+let progress = Object.create(null);
 let state = { course: COURSES[0].id, exam: null, n: null, mode: "q" };
-const examCache = {};
-const progressCache = {};
+const examCache = Object.create(null);
+const progressCache = Object.create(null);
+let client = null;
+let user = null;
+let authReady = false;
+let accountEpoch = 0;
+let courseRequest = 0;
+let marksReady = false;
+let guestNoticeShown = false;
+let noticeKind = "";
+let writeQueue = Promise.resolve();
+const pendingWrites = new Map();
 
 // Visit counting, enabled only when the static build passes a GoatCounter
 // site code (see courses.py) — the local server never does. count.js records
@@ -228,6 +296,160 @@ $("site-title").textContent = CONFIG.title;
 const pad = (n) => String(n).padStart(2, "0");
 const fileFor = (mode, n) => (mode === "q" ? "question_" : "answer_") + pad(n) + ".pdf";
 
+$("btn-sidebar").onclick = () => {
+  const sidebar = $("question-sidebar");
+  sidebar.hidden = !sidebar.hidden;
+  const button = $("btn-sidebar");
+  button.setAttribute("aria-expanded", String(!sidebar.hidden));
+  const label = sidebar.hidden ? "Show question sidebar" : "Hide question sidebar";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+};
+
+function notice(kind, text, action, label) {
+  noticeKind = kind;
+  $("notice-text").textContent = text;
+  $("notice-action").hidden = !action;
+  $("notice-action").textContent = label || "";
+  $("notice-action").onclick = action || null;
+  $("notice").hidden = false;
+}
+
+function enableMarks(ready) {
+  marksReady = ready;
+  $("btn-done").disabled = !ready;
+  $("btn-flag").disabled = !ready;
+}
+
+async function signIn() {
+  if (!client || !authReady) {
+    notice("auth", "Sign-in is not available yet. You can still browse and try marking questions.");
+    return;
+  }
+  // PKCE uses the query string for its return code, leaving question deep links intact.
+  const redirect = new URL(location.href);
+  redirect.search = "";
+  const { error } = await client.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: redirect.href,
+      queryParams: { prompt: "select_account" },
+    },
+  }).catch(() => ({ error: true }));
+  if (error) notice("auth", "Couldn’t open Google sign-in. Please try again.", signIn, "Try again");
+}
+
+function retryWrites() {
+  for (const [key, item] of pendingWrites) enqueueWrite(key, item);
+}
+
+function enqueueWrite(key, item) {
+  const epoch = accountEpoch;
+  // Serialize writes so rapid toggles cannot arrive in the opposite order.
+  writeQueue = writeQueue.then(async () => {
+    if (epoch !== accountEpoch || pendingWrites.get(key) !== item) return;
+    try {
+      const { error } = await client.from("question_progress").upsert(item, {
+        onConflict: "user_id,course_id,exam_id,question_number",
+      });
+      if (error) throw error;
+      if (epoch !== accountEpoch) return;
+      if (pendingWrites.get(key) === item) pendingWrites.delete(key);
+      if (!pendingWrites.size && noticeKind === "save") $("notice").hidden = true;
+    } catch (err) {
+      if (epoch === accountEpoch) notice("save",
+        "Some changes haven’t been saved. Keep this page open and retry when you’re connected.",
+        retryWrites, "Retry saving");
+    }
+  });
+}
+
+async function setAccount(session) {
+  const next = session ? session.user : null;
+  if (authReady && (next && next.id) === (user && user.id)) return;
+  authReady = true;
+  user = next;
+  accountEpoch++;
+  courseRequest++;
+  pendingWrites.clear();
+  for (const id of Object.keys(progressCache)) delete progressCache[id];
+  progress = Object.create(null);
+  refreshMarks();
+  enableMarks(false);
+  $("notice").hidden = true;
+  $("btn-sign-in").hidden = !!user;
+  $("btn-sign-in").disabled = !client;
+  $("btn-sign-out").hidden = !user;
+}
+
+async function initializeAuth() {
+  enableMarks(false);
+  const settings = CONFIG.auth;
+  if (!settings || !settings.url || !settings.publishableKey) {
+    await setAccount(null);
+    $("btn-sign-in").disabled = false;
+    return;
+  }
+  try {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      const timeout = setTimeout(() => reject(new Error("Sign-in timed out")), 10000);
+      script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js";
+      script.onload = () => { clearTimeout(timeout); resolve(); };
+      script.onerror = () => { clearTimeout(timeout); reject(new Error("Sign-in unavailable")); };
+      document.head.appendChild(script);
+    });
+    client = window.supabase.createClient(settings.url, settings.publishableKey, {
+      auth: { flowType: "pkce", persistSession: true, detectSessionInUrl: true },
+    });
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    await setAccount(data.session);
+    client.auth.onAuthStateChange((_event, session) => {
+      // Do not call async Supabase methods inside the SDK's auth callback lock.
+      setTimeout(async () => {
+        const id = session && session.user.id;
+        if (id === (user && user.id)) return;
+        await setAccount(session);
+        await reloadAccountProgress();
+      }, 0);
+    });
+  } catch (err) {
+    client = null;
+    await setAccount(null);
+    $("btn-sign-in").disabled = false;
+    notice("auth", "Sign-in couldn’t load. Refresh to try again. You can still browse; guest marks won’t be saved.");
+  }
+}
+
+async function reloadAccountProgress() {
+  const target = { ...state };
+  const loaded = await loadCourse(target.course);
+  if (!loaded || state.course !== target.course) return;
+  selectExam(exams.some((e) => e.dir === target.exam) ? target.exam : (exams[0] || {}).dir);
+  if (currentExam() && currentExam().questions.includes(target.n)) selectQuestion(target.n, target.mode);
+}
+
+$("btn-sign-in").onclick = signIn;
+$("notice-dismiss").onclick = () => { $("notice").hidden = true; };
+$("btn-sign-out").onclick = async () => {
+  if (pendingWrites.size) {
+    notice("save", "Please save your pending changes before signing out.", retryWrites, "Retry saving");
+    return;
+  }
+  $("btn-sign-out").disabled = true;
+  const { error } = await client.auth.signOut({ scope: "local" }).catch(() => ({ error: true }));
+  $("btn-sign-out").disabled = false;
+  if (error) notice("auth", "Couldn’t sign out. Please try again.");
+  else if (user) { await setAccount(null); await reloadAccountProgress(); }
+};
+window.addEventListener("online", retryWrites);
+window.addEventListener("beforeunload", (event) => {
+  if (!pendingWrites.size) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 function currentCourse() {
   return COURSES.find((c) => c.id === state.course) || COURSES[0];
 }
@@ -260,20 +482,22 @@ function markOf(dir, n) {
 function saveMark(done, flagged) {
   const dir = state.exam;
   const n = state.n;
-  if (!dir || n === null) return;
+  if (!marksReady || !dir || n === null) return;
   if (done || flagged) {
-    (progress[dir] = progress[dir] || {})[n] = { done, flagged };
+    (progress[dir] = progress[dir] || Object.create(null))[n] = { done, flagged };
   } else if (progress[dir]) {
     delete progress[dir][n];
   }
-  if (STATIC) {
-    localStorage.setItem(currentCourse().storageKey, JSON.stringify(progress));
-  } else {
-    fetch("/api/progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: state.course, exam: dir, n, done, flagged }),
-    });
+  if (user) {
+    const item = { user_id: user.id, course_id: state.course, exam_id: dir,
+      question_number: n, done, flagged };
+    const key = JSON.stringify([state.course, dir, n]);
+    pendingWrites.set(key, item);
+    enqueueWrite(key, item);
+  } else if (!guestNoticeShown) {
+    guestNoticeShown = true;
+    notice("guest", "These marks won’t be saved after you refresh or leave. Sign in to save future progress. Guest marks won’t transfer.",
+      signIn, "Sign in with Google");
   }
   refreshMarks();
 }
@@ -388,7 +612,8 @@ function applyHash() {
   if (!target || !COURSES.some((c) => c.id === target.course)) {
     return Promise.resolve(false);
   }
-  return loadCourse(target.course).then(() => {
+  return loadCourse(target.course).then((loaded) => {
+    if (!loaded) return true;
     const exam = exams.find((e) => e.dir === target.dir);
     if (!exam || !exam.questions.includes(target.n)) {
       selectExam(exams.length ? exams[0].dir : null);
@@ -456,30 +681,45 @@ function fetchExams(id) {
   return fetch(url).then((r) => r.json()).then((data) => (examCache[id] = data));
 }
 
-function fetchProgress(id) {
+async function fetchProgress(id) {
   if (progressCache[id]) return Promise.resolve(progressCache[id]);
-  if (!STATIC) {
-    return fetch("/api/progress?course=" + encodeURIComponent(id))
-      .then((r) => r.json())
-      .then((data) => (progressCache[id] = data));
+  const epoch = accountEpoch;
+  const stored = Object.create(null);
+  if (user) {
+    // Page through results: Supabase caps a single response at 1,000 rows.
+    for (let start = 0; ; start += 1000) {
+      const { data, error } = await client.from("question_progress")
+        .select("exam_id,question_number,done,flagged")
+        .eq("user_id", user.id).eq("course_id", id)
+        .order("exam_id").order("question_number").range(start, start + 999);
+      if (epoch !== accountEpoch) throw new Error("Account changed");
+      if (error) throw error;
+      for (const row of data) {
+        (stored[row.exam_id] ||= Object.create(null))[row.question_number] = { done: row.done, flagged: row.flagged };
+      }
+      if (data.length < 1000) break;
+    }
   }
-  const course = COURSES.find((c) => c.id === id);
-  let stored = {};
-  try {
-    stored = JSON.parse(localStorage.getItem(course.storageKey) || "{}");
-  } catch (err) {
-    stored = {};
-  }
-  return Promise.resolve((progressCache[id] = stored));
+  return (progressCache[id] = stored);
 }
 
 // Each course keeps its own exam list and its own marks; both are fetched
 // once and then cached, so switching back and forth is instant.
 function loadCourse(id) {
-  return Promise.all([fetchExams(id), fetchProgress(id)]).then(([data, prog]) => {
+  const request = ++courseRequest;
+  const epoch = accountEpoch;
+  enableMarks(false);
+  return Promise.all([fetchExams(id), fetchProgress(id).then(
+    (data) => ({ data }), (error) => ({ error })
+  )]).then(([data, result]) => {
+    if (epoch !== accountEpoch || request !== courseRequest) return false;
     state.course = id;
     exams = data;
-    progress = prog;
+    progress = result.data || {};
+    enableMarks(!result.error);
+    if (result.error) notice("load", "Couldn’t load your saved progress. Marking is paused until it loads.",
+      reloadAccountProgress, "Retry loading");
+    else if (noticeKind === "load") $("notice").hidden = true;
     $("course-select").value = id;
     document.title =
       (COURSES.length > 1 ? currentCourse().title + " · " : "") + CONFIG.title;
@@ -489,11 +729,13 @@ function loadCourse(id) {
       /* private browsing: remembering the course is optional */
     }
     fillExamSelect();
+    return true;
   });
 }
 
 function selectCourse(id) {
-  return loadCourse(id).then(() => {
+  return loadCourse(id).then((loaded) => {
+    if (!loaded) return;
     if (exams.length) selectExam(exams[0].dir);
     else {
       state.exam = null;
@@ -603,22 +845,31 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+function toolLabel(button, icon, label) {
+  button.textContent = icon;
+  const text = document.createElement("span");
+  text.className = "button-label";
+  text.textContent = " " + label;
+  button.appendChild(text);
+  button.setAttribute("aria-label", label);
+}
+
 function copyQuestionAndAnswer() {
   const btn = $("btn-copy");
   const exam = currentExam();
   if (!exam || state.n === null || btn.disabled) return;
   const name = exam.dir + "-" + pad(state.n) + ".png";
   const finish = (text, ok) => {
-    btn.textContent = text;
+    toolLabel(btn, ok ? "✓" : "🖼️", text);
     btn.classList.toggle("copied", !!ok);
     btn.disabled = false;
     setTimeout(() => {
-      btn.textContent = "🖼️ Copy Q+A";
+      toolLabel(btn, "🖼️", "Copy Q+A");
       btn.classList.remove("copied");
     }, 1800);
   };
   btn.disabled = true;
-  btn.textContent = "Copying…";
+  toolLabel(btn, "…", "Copying…");
   // Safari only honours a clipboard write started in the click's own turn, so
   // the ClipboardItem is built here and handed the still-pending blob.
   const blob = combinedImage();
@@ -649,7 +900,7 @@ function browserFullscreen() {
 
 function applyFullscreen(on) {
   document.body.classList.toggle("fullscreen", on);
-  $("btn-full").textContent = on ? "⤢ Exit full screen" : "⛶ Full screen";
+  toolLabel($("btn-full"), on ? "⤢" : "⛶", on ? "Exit full screen" : "Full screen");
 }
 
 function toggleFullscreen() {
@@ -679,10 +930,10 @@ $("btn-exit-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur()
 $("btn-share").onclick = (e) => {
   const btn = e.currentTarget;
   copyToClipboard(location.href)
-    .then(() => { btn.textContent = "✓ Copied!"; btn.classList.add("copied"); })
-    .catch(() => { btn.textContent = "Copy failed"; })
+    .then(() => { toolLabel(btn, "✓", "Copied!"); btn.classList.add("copied"); })
+    .catch(() => { toolLabel(btn, "!", "Copy failed"); })
     .then(() => setTimeout(() => {
-      btn.textContent = "🔗 Share";
+      toolLabel(btn, "🔗", "Share");
       btn.classList.remove("copied");
     }, 1500));
   btn.blur();
@@ -724,7 +975,10 @@ const initialCourse = COURSES.some((c) => c.id === remembered)
   ? remembered
   : COURSES[0].id;
 
-applyHash().then((handled) => (handled ? null : selectCourse(initialCourse)));
+initializeAuth()
+  .then(() => applyHash())
+  .then((handled) => (handled ? null : selectCourse(initialCourse)))
+  .catch(() => notice("load", "Couldn’t load the questions. Refresh to try again."));
 </script>
 </body>
 </html>

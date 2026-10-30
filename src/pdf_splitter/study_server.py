@@ -15,8 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -24,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 import fitz
 
 from .courses import SITE_TITLE, Course
+from .auth_config import auth_config
 from .courses import resolve as resolve_courses
 
 RENDER_DPI = 130
@@ -150,31 +150,14 @@ def expand_indexed_images(doc: fitz.Document) -> None:
 
 @dataclass
 class ServedCourse:
-    """One course directory the server exposes, with its saved progress."""
+    """One course directory the server exposes."""
 
     course: Course
     root: Path
-    progress: dict[str, dict] = field(default_factory=dict)
-
-    @property
-    def progress_path(self) -> Path:
-        return self.root / "progress.json"
-
-    def load_progress(self) -> None:
-        if self.progress_path.is_file():
-            self.progress = json.loads(self.progress_path.read_text(encoding="utf-8"))
-
-    def save_progress(self) -> None:
-        tmp = self.progress_path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps(self.progress, indent=1, sort_keys=True), encoding="utf-8"
-        )
-        tmp.replace(self.progress_path)
 
 
 class StudyHandler(BaseHTTPRequestHandler):
     courses: dict[str, ServedCourse] = {}
-    progress_lock = threading.Lock()
     render_cache: dict[str, bytes] = {}
 
     def _course(self, course_id: str | None) -> ServedCourse | None:
@@ -195,45 +178,10 @@ class StudyHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/exams":
             body = json.dumps(scan_exams(served.root)).encode()
             self._send(200, "application/json", body)
-        elif parsed.path == "/api/progress":
-            with self.progress_lock:
-                body = json.dumps(served.progress).encode()
-            self._send(200, "application/json", body)
         elif parsed.path == "/api/render":
             self._serve_render(served, params)
         else:
             self._send(404, "text/plain", b"not found")
-
-    def do_POST(self) -> None:  # noqa: N802 (http.server API)
-        if urlparse(self.path).path != "/api/progress":
-            self._send(404, "text/plain", b"not found")
-            return
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(length))
-            exam = data["exam"]
-            n = str(int(data["n"]))
-            done = bool(data.get("done"))
-            flagged = bool(data.get("flagged"))
-            if not SAFE_NAME_RE.match(exam):
-                raise ValueError(exam)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            self._send(400, "text/plain", b"bad request")
-            return
-        served = self._course(data.get("course"))
-        if served is None:
-            self._send(404, "text/plain", b"unknown course")
-            return
-        with self.progress_lock:
-            marks = served.progress.setdefault(exam, {})
-            if done or flagged:
-                marks[n] = {"done": done, "flagged": flagged}
-            else:
-                marks.pop(n, None)
-                if not marks:
-                    served.progress.pop(exam, None)
-            served.save_progress()
-        self._send(200, "application/json", b'{"ok": true}')
 
     def _serve_page(self) -> None:
         page = Path(__file__).with_name("study.html").read_text(encoding="utf-8")
@@ -242,6 +190,7 @@ class StudyHandler(BaseHTTPRequestHandler):
             return
         config = json.dumps(
             {
+                "auth": auth_config(),
                 "title": (
                     self.courses[next(iter(self.courses))].course.title
                     if len(self.courses) == 1
@@ -311,6 +260,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
 
+    auth_config()  # Fail early on incomplete or unsafe browser settings.
     base = Path.cwd()
     served = {}
     for course in resolve_courses(args.course, base=base):
@@ -318,7 +268,6 @@ def main() -> None:
         if not root.is_dir():
             raise SystemExit(f"course directory not found: {root}")
         entry = ServedCourse(course, root)
-        entry.load_progress()
         served[course.id] = entry
 
     StudyHandler.courses = served
