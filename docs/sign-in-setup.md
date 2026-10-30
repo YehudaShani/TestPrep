@@ -44,6 +44,38 @@ ignored, with no import.
 
 ## Verify with real accounts before deploying
 
+### Course requests
+
+For a project where course requests have not been set up yet, run
+`supabase/setup-course-requests.sql` once in SQL Editor. It combines both
+course-request migrations into one transaction. Use this file instead of
+running the two migrations below separately. It does not change the existing
+question-progress table.
+
+For projects managed with individual migrations:
+
+Run `supabase/migrations/202610300002_course_requests.sql` once in the SQL
+editor to enable the request form. Signed-in visitors can submit a course
+name; anonymous visitors cannot submit. Each request stores the user ID,
+course name, and submission date. Duplicate names from the same user are
+rejected without regard to letter case. The project owner can review requests
+in **Table Editor → course_requests**. Browser users cannot read, modify, or
+delete the requests. This migration is separate from the original progress
+migration; do not rerun the original migration in an existing project.
+
+Next run `supabase/migrations/202610300003_course_request_limit.sql` once to
+limit each user to three stored course requests. Existing requests count toward
+the limit and remain intact. The database reserves slots atomically, preventing
+simultaneous submissions from exceeding three. Failed or duplicate submissions
+do not consume a slot. If the project owner deletes a request in Table Editor,
+that slot becomes available again. Users cannot change their own quota.
+
+Test the signed-out sign-in prompt, opening/cancelling the signed-in form,
+typing spaces and shortcut letters without changing questions, successful
+submission, duplicate submission, and failure/retry with the network offline.
+
+### Progress and sign-in
+
 - Sign in as account A, mark a question done and hard, refresh, and confirm
   both marks return. Unmark it, refresh, and confirm it stays unmarked.
 - Open a second browser/device as A and confirm the marks load. Changes in

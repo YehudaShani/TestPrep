@@ -10,6 +10,9 @@ function viewer() {
   const listeners = {};
   const element = () => ({
     hidden: false, disabled: false, children: [], options: [], dataset: {},
+    open: false, value: '', textContent: '',
+    addEventListener() {}, setAttribute() {}, focus() {}, reset() {},
+    showModal() { this.open = true; }, close() { this.open = false; },
     classList: { toggle() {}, contains() { return false; } },
     appendChild(child) { this.children.push(child); },
   });
@@ -27,6 +30,7 @@ function viewer() {
   context.window = context;
   context.addEventListener = (name, handler) => { listeners[name] = handler; };
   const html = fs.readFileSync('src/pdf_splitter/study.html', 'utf8');
+  for (const match of html.matchAll(/id="([^"]+)"/g)) document.getElementById(match[1]);
   let script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   script = script.slice(0, script.lastIndexOf('\ninitializeAuth()'));
   vm.runInContext(script + `
@@ -151,4 +155,94 @@ test('old-account fetch cannot populate a new account cache', async () => {
   complete({ data: [{ exam_id: 'exam', question_number: 1, done: true }], error: null });
   await assert.rejects(fetch, /Account changed/);
   assert.equal(Object.keys(api.progress).length, 0);
+});
+
+test('guests see a sign-in prompt and signed-in users see the request form', async () => {
+  const { api, elements } = viewer();
+  await api.setAccount(null);
+  assert.equal(elements.get('btn-request-courses').disabled, false);
+  elements.get('btn-request-courses').onclick();
+  assert.equal(elements.get('course-request-dialog').open, true);
+  assert.equal(elements.get('course-request-fields').hidden, true);
+  assert.equal(elements.get('course-request-sign-in').hidden, false);
+  assert.equal(elements.get('course-request-description').textContent, 'Requesting another course requires sign-in.');
+  await elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  assert.equal(elements.get('notice').hidden, true);
+  api.setClient(database());
+  await api.setAccount({ user: { id: 'A' } });
+  assert.equal(elements.get('btn-request-courses').disabled, false);
+  elements.get('btn-request-courses').onclick();
+  assert.equal(elements.get('course-request-dialog').open, true);
+  assert.equal(elements.get('course-request-fields').hidden, false);
+  assert.equal(elements.get('course-request-sign-in').hidden, true);
+  await api.setAccount(null);
+  assert.equal(elements.get('course-request-dialog').open, false);
+  assert.equal(elements.get('btn-request-courses').disabled, false);
+});
+
+test('course requests save the trimmed course name with the signed-in user', async () => {
+  const { api, elements } = viewer();
+  const requests = [];
+  api.setClient({ from(table) { assert.equal(table, 'course_requests'); return {
+    async insert(row) { requests.push({ ...row }); return { error: null }; },
+  }; } });
+  await api.setAccount({ user: { id: 'A' } });
+  elements.get('btn-request-courses').onclick();
+  elements.get('course-request-name').value = '  Linear Algebra  ';
+  await elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  assert.deepEqual(requests, [{ user_id: 'A', course_name: 'Linear Algebra' }]);
+  assert.equal(elements.get('course-request-dialog').open, false);
+  assert.match(elements.get('notice-text').textContent, /request was sent/);
+});
+
+test('empty course requests are rejected and failed submissions retain the dialog', async () => {
+  const { api, elements } = viewer();
+  let calls = 0;
+  api.setClient({ from() { return { async insert() { calls++; return { error: { code: '42501' } }; } }; } });
+  await api.setAccount({ user: { id: 'A' } });
+  elements.get('btn-request-courses').onclick();
+  elements.get('course-request-name').value = '   ';
+  await elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  assert.equal(calls, 0);
+  elements.get('course-request-name').value = 'Linear Algebra';
+  await elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  assert.equal(calls, 1);
+  assert.equal(elements.get('course-request-dialog').open, true);
+  assert.equal(elements.get('course-request-name').value, 'Linear Algebra');
+  assert.match(elements.get('course-request-error').textContent, /Couldn’t send/);
+  assert.equal(elements.get('course-request-submit').disabled, false);
+});
+
+test('double submissions are blocked and account changes ignore stale responses', async () => {
+  const { api, elements } = viewer();
+  let complete;
+  let calls = 0;
+  api.setClient({ from() { return { insert() { calls++; return new Promise((resolve) => { complete = resolve; }); } }; } });
+  await api.setAccount({ user: { id: 'A' } });
+  elements.get('btn-request-courses').onclick();
+  elements.get('course-request-name').value = 'Linear Algebra';
+  const pending = elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  await elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  assert.equal(calls, 1);
+  await api.setAccount({ user: { id: 'B' } });
+  complete({ error: null });
+  await pending;
+  assert.equal(elements.get('notice').hidden, true);
+  assert.equal(elements.get('course-request-dialog').open, false);
+});
+
+test('the three-course limit shows a clear message and preserves the typed name', async () => {
+  const { api, elements } = viewer();
+  api.setClient({ from() { return { async insert() {
+    return { error: { code: 'P0001', message: 'course_request_limit_reached' } };
+  } }; } });
+  await api.setAccount({ user: { id: 'A' } });
+  elements.get('btn-request-courses').onclick();
+  elements.get('course-request-name').value = 'Fourth course';
+  await elements.get('course-request-form').onsubmit({ preventDefault() {} });
+  assert.equal(elements.get('course-request-dialog').open, true);
+  assert.equal(elements.get('course-request-name').value, 'Fourth course');
+  assert.equal(elements.get('course-request-error').textContent,
+    'You’ve reached the limit of three course requests.');
+  assert.equal(elements.get('notice').hidden, true);
 });

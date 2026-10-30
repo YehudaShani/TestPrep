@@ -87,12 +87,15 @@
   }
   main { flex: 1; display: flex; min-height: 0; }
   nav {
+    display: flex; flex-direction: column;
     width: 190px; flex-shrink: 0; padding: 12px; overflow-y: auto;
     background: var(--panel); border-right: 1px solid var(--border);
   }
+  nav[hidden] { display: none; }
+  nav > * { flex-shrink: 0; }
   nav h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
   .sidebar-shortcuts {
-    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+    margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border);
   }
   .sidebar-shortcuts h2 { font-size: 10px; margin-bottom: 6px; }
   .sidebar-shortcuts dl {
@@ -107,7 +110,24 @@
   }
   #btn-request-courses { width: 100%; margin-top: 12px; padding: 7px 6px; }
   #btn-sidebar { flex-shrink: 0; padding: 5px 8px; font-size: 17px; line-height: 1.2; }
-  #qgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #course-request-dialog {
+    width: min(400px, calc(100% - 32px)); padding: 24px;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--panel); color: var(--text);
+    box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+  #course-request-dialog::backdrop { background: rgba(0,0,0,.4); }
+  #course-request-dialog h2 { font-size: 18px; margin: 0 0 8px; }
+  #course-request-dialog p { color: var(--muted); margin: 0 0 18px; }
+  #course-request-dialog label { display: block; margin-bottom: 6px; }
+  #course-request-name {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+  }
+  #course-request-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  #course-request-submit, #course-request-sign-in { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  #course-request-error { margin-top: 10px; font-size: 13px; }
+  #qgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 20px; }
   #qgrid button {
     position: relative; padding: 8px 0; border: 1px solid var(--border);
     border-radius: 6px; background: var(--bg); color: var(--text);
@@ -187,11 +207,11 @@
   </span>
   <span id="marks">
     <button id="btn-done" title="mark as answered (D)" aria-label="Done">✓<span class="button-label"> Done</span></button>
-    <button id="btn-flag" title="flag as difficult (F)" aria-label="Hard">⚑<span class="button-label"> Hard</span></button>
+    <button id="btn-flag" title="flag as difficult (H)" aria-label="Hard">⚑<span class="button-label"> Hard</span></button>
   </span>
   <button id="btn-share" aria-label="Share" title="copy a link to this question">🔗<span class="button-label"> Share</span></button>
   <button id="btn-copy" aria-label="Copy question and answer" title="copy question + answer as one image (C)">🖼️<span class="button-label"> Copy Q+A</span></button>
-  <button id="btn-full" aria-label="Full screen" title="fill the screen with the page (Z)">⛶<span class="button-label"> Full screen</span></button>
+  <button id="btn-full" aria-label="Full screen" title="fill the screen with the page (F)">⛶<span class="button-label"> Full screen</span></button>
   </div>
   <span id="account">
     <button class="navbtn" id="btn-sign-in" disabled>Sign in with Google</button>
@@ -213,13 +233,13 @@
         <dt><kbd>Space</kbd></dt><dd>Question / answer</dd>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next</dd>
         <dt><kbd>D</kbd></dt><dd>Mark done</dd>
-        <dt><kbd>F</kbd></dt><dd>Mark hard</dd>
+        <dt><kbd>H</kbd></dt><dd>Mark hard</dd>
         <dt><kbd>C</kbd></dt><dd>Copy Q+A image</dd>
-        <dt><kbd>Z</kbd></dt><dd>Full screen</dd>
+        <dt><kbd>F</kbd></dt><dd>Full screen</dd>
         <dt><kbd>Esc</kbd></dt><dd>Exit full screen</dd>
       </dl>
     </section>
-    <button class="navbtn" id="btn-request-courses" disabled title="Coming soon">Request more courses</button>
+    <button class="navbtn" id="btn-request-courses" title="Request another course" aria-haspopup="dialog">Request another course</button>
   </nav>
   <div id="viewer" tabindex="0">
     <div id="banner">
@@ -231,7 +251,23 @@
     <p id="no-answer" hidden>No answer for this question</p>
   </div>
 </main>
-<button id="btn-exit-full" title="leave full screen (Z or Esc)">⤢ Exit full screen</button>
+<dialog id="course-request-dialog" aria-labelledby="course-request-title" aria-describedby="course-request-description">
+  <form id="course-request-form">
+    <h2 id="course-request-title">Request another course</h2>
+    <p id="course-request-description">Enter one course name per request. You can request up to three courses in total.</p>
+    <div id="course-request-fields">
+      <label for="course-request-name">Name of one course</label>
+      <input id="course-request-name" name="course" type="text" required minlength="2" maxlength="160" autocomplete="off" autofocus placeholder="e.g. Linear Algebra">
+    </div>
+    <div id="course-request-error" role="alert" hidden></div>
+    <div class="dialog-actions">
+      <button class="navbtn" id="course-request-cancel" type="button">Cancel</button>
+      <button class="navbtn" id="course-request-submit" type="submit">Send request</button>
+      <button class="navbtn" id="course-request-sign-in" type="button" hidden>Sign in with Google</button>
+    </div>
+  </form>
+</dialog>
+<button id="btn-exit-full" title="leave full screen (F or Esc)">⤢ Exit full screen</button>
 <footer>This is a tool to help prepare for exams. Let me know what you think and if there are other courses you would like to use this for :) &nbsp;<a href="mailto:yehuda.shani@campus.technion.ac.il">yehuda.shani@campus.technion.ac.il</a></footer>
 <script>
 "use strict";
@@ -257,6 +293,8 @@ let courseRequest = 0;
 let marksReady = false;
 let guestNoticeShown = false;
 let noticeKind = "";
+let requestSubmitting = false;
+let requestGeneration = 0;
 let writeQueue = Promise.resolve();
 const pendingWrites = new Map();
 
@@ -369,6 +407,9 @@ async function setAccount(session) {
   if (authReady && (next && next.id) === (user && user.id)) return;
   authReady = true;
   user = next;
+  requestGeneration++;
+  requestSubmitting = false;
+  if ($("course-request-dialog").open) $("course-request-dialog").close();
   accountEpoch++;
   courseRequest++;
   pendingWrites.clear();
@@ -431,6 +472,74 @@ async function reloadAccountProgress() {
 }
 
 $("btn-sign-in").onclick = signIn;
+$("btn-request-courses").onclick = () => {
+  if (requestSubmitting) return;
+  const canRequest = !!user && !!client;
+  requestGeneration++;
+  $("course-request-form").reset();
+  $("course-request-error").hidden = true;
+  $("course-request-submit").disabled = false;
+  $("course-request-submit").textContent = "Send request";
+  $("course-request-cancel").disabled = false;
+  $("course-request-description").textContent = canRequest
+    ? "Enter one course name per request. You can request up to three courses in total."
+    : "Requesting another course requires sign-in.";
+  $("course-request-fields").hidden = !canRequest;
+  $("course-request-submit").hidden = !canRequest;
+  $("course-request-sign-in").hidden = canRequest;
+  $("course-request-dialog").showModal();
+  (canRequest ? $("course-request-name") : $("course-request-sign-in")).focus();
+};
+$("course-request-sign-in").onclick = async () => {
+  $("course-request-dialog").close();
+  await signIn();
+};
+$("course-request-cancel").onclick = () => $("course-request-dialog").close();
+$("course-request-dialog").addEventListener("cancel", (event) => {
+  if (requestSubmitting) event.preventDefault();
+});
+$("course-request-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!user || !client || requestSubmitting) return;
+  const courseName = $("course-request-name").value.trim();
+  const errorBox = $("course-request-error");
+  if (courseName.length < 2 || courseName.length > 160) {
+    errorBox.textContent = "Enter a course name between 2 and 160 characters.";
+    errorBox.hidden = false;
+    $("course-request-name").focus();
+    return;
+  }
+  const generation = requestGeneration;
+  requestSubmitting = true;
+  $("course-request-submit").disabled = true;
+  $("course-request-submit").textContent = "Sending…";
+  $("course-request-cancel").disabled = true;
+  errorBox.hidden = true;
+  try {
+    const { error } = await client.from("course_requests").insert({ user_id: user.id, course_name: courseName });
+    if (error) throw error;
+    if (generation !== requestGeneration) return;
+    $("course-request-dialog").close();
+    notice("request", "Thanks—your course request was sent.");
+  } catch (error) {
+    if (generation !== requestGeneration) return;
+    if (error.code === "P0001" && error.message === "course_request_limit_reached") {
+      errorBox.textContent = "You’ve reached the limit of three course requests.";
+    } else {
+      errorBox.textContent = error.code === "23505"
+        ? "You’ve already requested this course."
+        : "Couldn’t send your request. Please try again.";
+    }
+    errorBox.hidden = false;
+  } finally {
+    if (generation === requestGeneration) {
+      requestSubmitting = false;
+      $("course-request-submit").disabled = false;
+      $("course-request-submit").textContent = "Send request";
+      $("course-request-cancel").disabled = false;
+    }
+  }
+};
 $("notice-dismiss").onclick = () => { $("notice").hidden = true; };
 $("btn-sign-out").onclick = async () => {
   if (pendingWrites.size) {
@@ -445,7 +554,7 @@ $("btn-sign-out").onclick = async () => {
 };
 window.addEventListener("online", retryWrites);
 window.addEventListener("beforeunload", (event) => {
-  if (!pendingWrites.size) return;
+  if (!pendingWrites.size && !requestSubmitting) return;
   event.preventDefault();
   event.returnValue = "";
 });
@@ -877,7 +986,7 @@ function copyQuestionAndAnswer() {
     ? navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
     : Promise.reject(new Error("clipboard images unsupported"));
   written
-    .then(() => finish("✓ Copied!", true))
+    .then(() => finish("Copied!", true))
     .catch(() =>
       blob
         .then((b) => {
@@ -941,14 +1050,15 @@ $("btn-share").onclick = (e) => {
 window.addEventListener("hashchange", applyHash);
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+  if ($("course-request-dialog").open || ["SELECT", "INPUT", "TEXTAREA"].includes(e.target.tagName)
+      || e.target.isContentEditable || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === "Space") { e.preventDefault(); toggleMode(); }
   else if (e.key === "ArrowRight") step(1);
   else if (e.key === "ArrowLeft") step(-1);
   else if (e.code === "KeyD") toggleDone();
-  else if (e.code === "KeyF") toggleFlag();
+  else if (e.code === "KeyH") toggleFlag();
   else if (e.code === "KeyC") copyQuestionAndAnswer();
-  else if (e.code === "KeyZ") toggleFullscreen();
+  else if (e.code === "KeyF") toggleFullscreen();
   // Esc only reaches here when the layout is full screen without the browser
   // being — otherwise the browser eats it and fullscreenchange handles it.
   else if (e.key === "Escape" && document.body.classList.contains("fullscreen")) {
