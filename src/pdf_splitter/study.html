@@ -4,125 +4,206 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Exam Study Viewer</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171a23" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11.5' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #f4f5f7; --panel: #ffffff; --text: #1c1e21; --muted: #6b7280;
-    --accent: #2563eb; --accent-text: #ffffff; --border: #d1d5db;
-    --answer: #059669; --flag: #d97706;
-    --done-bg: rgba(5, 150, 105, .14); --flag-bg: rgba(217, 119, 6, .14);
+    --bg: #f4f5fa; --panel: #ffffff; --sunken: #eef0f5;
+    --text: #1a1d29; --muted: #6b7084;
+    --border: #e3e5ec; --border-strong: #cdd1dc;
+    --accent: #4f46e5; --accent-fg: #4f46e5; --accent-text: #ffffff;
+    --accent-soft: rgba(79, 70, 229, .10);
+    --answer: #059669; --answer-fg: #047857; --answer-soft: rgba(5, 150, 105, .13);
+    --flag: #d97706; --flag-fg: #b45309; --flag-soft: rgba(217, 119, 6, .14);
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+    --shadow: 0 1px 3px rgba(16, 24, 40, .08), 0 10px 30px rgba(16, 24, 40, .08);
+    --page-filter: none;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #16181d; --panel: #1f2229; --text: #e5e7eb; --muted: #9ca3af;
-      --accent: #3b82f6; --accent-text: #ffffff; --border: #374151;
-      --answer: #10b981; --flag: #f59e0b;
-      --done-bg: rgba(16, 185, 129, .2); --flag-bg: rgba(245, 158, 11, .2);
+      --bg: #0f1117; --panel: #171a23; --sunken: #1f232e;
+      --text: #e6e8ef; --muted: #9aa0b2;
+      --border: #272b37; --border-strong: #3a3f4e;
+      --accent: #6366f1; --accent-fg: #a5b4fc; --accent-text: #ffffff;
+      --accent-soft: rgba(99, 102, 241, .18);
+      --answer: #059669; --answer-fg: #34d399; --answer-soft: rgba(16, 185, 129, .16);
+      --flag: #d97706; --flag-fg: #fbbf24; --flag-soft: rgba(245, 158, 11, .16);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+      --shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
+      /* Exam pages are white paper; take the glare off them at night. */
+      --page-filter: brightness(.92);
     }
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    /* dvh tracks the phone address bar showing and hiding; vh is the fallback. */
+    margin: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column;
     background: var(--bg); color: var(--text);
-    font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
+  button, select { font: inherit; }
+  button { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- header ---- */
   header {
-    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
     background: var(--panel); border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
+    flex-wrap: wrap; position: relative; z-index: 1; box-shadow: var(--shadow-sm);
   }
-  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  .brand {
+    display: flex; align-items: center; gap: 10px; margin: 0 10px 0 0;
+    font-size: 16px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap;
+  }
+  .brand svg { width: 30px; height: 30px; flex: none; }
   select {
-    background: var(--bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 6px 10px; font-size: 14px; max-width: 340px;
+    height: 36px; padding: 0 10px; max-width: 340px;
+    background-color: var(--panel); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    font-weight: 500; cursor: pointer; box-shadow: var(--shadow-sm);
   }
-  #course-select { font-weight: 600; }
+  select:hover { border-color: var(--muted); }
+  #course-select { font-weight: 650; }
   /* No background here: the select's background also paints the open popup,
      which would tint every row green, not just the completed ones. */
-  select.complete { border-color: var(--answer); color: var(--answer); font-weight: 600; }
+  select.complete { border-color: var(--answer); color: var(--answer-fg); font-weight: 650; }
   option { background: var(--panel); color: var(--text); font-weight: 400; }
-  option.complete { background: var(--done-bg); color: var(--answer); font-weight: 600; }
-  #toggle {
-    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
-    display: inline-flex;
+  option.complete { background: var(--answer-soft); color: var(--answer-fg); font-weight: 600; }
+
+  /* Segmented controls: a sunken track with the active choice lifted out of it. */
+  #toggle, #marks {
+    display: inline-flex; gap: 2px; padding: 3px;
+    background: var(--sunken); border-radius: 10px;
   }
-  #toggle button {
-    border: 0; padding: 7px 18px; font-size: 14px; cursor: pointer;
-    background: var(--panel); color: var(--muted);
+  #toggle button, #marks button {
+    border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer;
+    background: transparent; color: var(--muted); font-weight: 550;
+    transition: background-color .15s, color .15s;
   }
-  #toggle button.active-q { background: var(--accent); color: var(--accent-text); }
-  #toggle button.active-a { background: var(--answer); color: var(--accent-text); }
+  #toggle button:hover, #marks button:hover { color: var(--text); background: var(--panel); }
+  #toggle button.active-q { background: var(--accent); color: var(--accent-text); box-shadow: var(--shadow-sm); }
+  #toggle button.active-a { background: var(--answer); color: var(--accent-text); box-shadow: var(--shadow-sm); }
+  #marks button.active-done { background: var(--answer); color: var(--accent-text); box-shadow: var(--shadow-sm); }
+  #marks button.active-flag { background: var(--flag); color: var(--accent-text); box-shadow: var(--shadow-sm); }
   #toggle button:disabled { opacity: .45; cursor: not-allowed; }
-  #marks {
-    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
-    display: inline-flex;
+
+  #btn-share, #btn-copy, #btn-full, .navbtn, #btn-exit-full {
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px;
+    cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500;
+    box-shadow: var(--shadow-sm); transition: background-color .15s, border-color .15s;
   }
-  #marks button {
-    border: 0; padding: 7px 14px; font-size: 14px; cursor: pointer;
-    background: var(--panel); color: var(--muted);
-  }
-  #marks button.active-done { background: var(--answer); color: var(--accent-text); }
-  #marks button.active-flag { background: var(--flag); color: var(--accent-text); }
-  #btn-share, #btn-copy, #btn-full {
-    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
-    font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
+  #btn-share:hover, #btn-copy:hover, #btn-full:hover, .navbtn:hover:not(:disabled),
+  #btn-exit-full:hover {
+    background: var(--sunken); border-color: var(--border-strong);
   }
   #btn-share.copied, #btn-copy.copied {
     background: var(--answer); color: var(--accent-text); border-color: var(--answer);
   }
   #btn-copy:disabled { opacity: .5; cursor: default; }
-  .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  /* ---- question list ---- */
   main { flex: 1; display: flex; min-height: 0; }
   nav {
-    width: 190px; padding: 12px; overflow-y: auto;
+    width: 212px; flex: none; padding: 16px 14px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
     background: var(--panel); border-right: 1px solid var(--border);
+    scrollbar-width: thin;
   }
-  nav h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  nav h2 {
+    font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin: 0;
+  }
+  .progress-head { display: flex; justify-content: space-between; align-items: baseline; }
+  #progress-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .progress-track {
+    height: 6px; margin-top: 8px; border-radius: 999px;
+    background: var(--sunken); overflow: hidden;
+  }
+  #progress-fill {
+    width: 0; height: 100%; border-radius: inherit; background: var(--answer);
+    transition: width .3s ease;
+  }
   #qgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   #qgrid button {
-    position: relative; padding: 8px 0; border: 1px solid var(--border);
-    border-radius: 6px; background: var(--bg); color: var(--text);
-    font-size: 13px; cursor: pointer;
+    position: relative; height: 36px; padding: 0;
+    border: 1px solid transparent; border-radius: 8px;
+    background: var(--sunken); color: var(--text);
+    font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+    cursor: pointer; transition: background-color .15s, border-color .15s;
   }
-  #qgrid button.done { background: var(--done-bg); border-color: var(--answer); }
-  #qgrid button.flagged { background: var(--flag-bg); box-shadow: inset 0 0 0 2px var(--flag); }
-  #qgrid button.done.flagged { background: var(--done-bg); }
-  #qgrid button.current { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  #qgrid button:hover { border-color: var(--border-strong); }
+  #qgrid button.done { background: var(--answer-soft); color: var(--answer-fg); }
+  #qgrid button.flagged { background: var(--flag-soft); color: var(--flag-fg); box-shadow: inset 0 0 0 2px var(--flag); }
+  #qgrid button.done.flagged { background: var(--answer-soft); color: var(--answer-fg); }
+  #qgrid button.current {
+    background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, .35);
+  }
   #qgrid button .dot {
-    position: absolute; top: 3px; right: 4px; width: 5px; height: 5px;
-    border-radius: 50%; background: var(--answer);
+    position: absolute; top: 4px; right: 4px; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--muted); opacity: .55;
   }
+  #qgrid button.current .dot { background: var(--accent-text); opacity: .8; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+  .legend .l-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); opacity: .55; }
+  .legend .l-done { background: var(--answer-soft); border: 1px solid var(--answer); }
+  .legend .l-flag { background: var(--flag-soft); border: 1px solid var(--flag); }
+  .shortcuts { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+  .shortcuts dl {
+    display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center;
+    margin: 8px 0 0; font-size: 12px; color: var(--muted);
+  }
+  .shortcuts dt { white-space: nowrap; }
+  .shortcuts dd { margin: 0; }
+  kbd {
+    display: inline-block; min-width: 20px; padding: 1px 5px; text-align: center;
+    font: 600 11px/16px ui-monospace, SFMono-Regular, Consolas, monospace;
+    color: var(--text); background: var(--sunken);
+    border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 5px;
+  }
+
+  /* ---- page viewer ---- */
   #viewer {
-    flex: 1; overflow: auto; padding: 20px; display: flex;
-    flex-direction: column; align-items: center; gap: 10px;
-  }
-  #status { color: var(--muted); }
-  #page-img {
-    max-width: 900px; width: 100%; background: #fff; border-radius: 6px;
-    box-shadow: 0 1px 8px rgba(0,0,0,.25);
+    flex: 1; overflow: auto; padding: 20px 24px 28px; display: flex;
+    flex-direction: column; align-items: center; gap: 14px;
   }
   #banner {
     align-self: stretch; max-width: 900px; margin: 0 auto; width: 100%;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
   }
-  #banner .mode-q { color: var(--accent); font-weight: 600; }
-  #banner .mode-a { color: var(--answer); font-weight: 600; }
+  #status { color: var(--muted); }
+  #banner .mode-q, #banner .mode-a {
+    display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 650;
+  }
+  #banner .mode-q { color: var(--accent-fg); background: var(--accent-soft); }
+  #banner .mode-a { color: var(--answer-fg); background: var(--answer-soft); }
+  .navbtn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  #page-img {
+    max-width: 900px; width: 100%; background: #fff; border-radius: 12px;
+    box-shadow: 0 0 0 1px var(--border), var(--shadow); filter: var(--page-filter);
+  }
+  /* A green ring says "you are looking at the answer" without reading the banner. */
+  #viewer.mode-a #page-img { box-shadow: 0 0 0 2px var(--answer), var(--shadow); }
   /* Some source exams simply never published a worked solution. */
   #no-answer {
     max-width: 900px; width: 100%; margin: 0; box-sizing: border-box;
-    padding: 28px 16px; text-align: center; color: var(--muted);
-    background: var(--panel); border: 1px dashed var(--border);
-    border-radius: 6px; font-size: 15px;
+    padding: 36px 16px; text-align: center; color: var(--muted);
+    background: var(--panel); border: 1px dashed var(--border-strong);
+    border-radius: 12px; font-size: 15px;
   }
-  .navbtn {
-    border: 1px solid var(--border); background: var(--panel); color: var(--text);
-    border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px;
-  }
-  .navbtn:disabled { opacity: .4; cursor: not-allowed; }
   footer {
-    padding: 6px 16px; text-align: center; font-size: 12px; color: var(--muted);
+    padding: 7px 16px; text-align: center; font-size: 12px; color: var(--muted);
     background: var(--panel); border-top: 1px solid var(--border);
   }
-  footer a { color: var(--accent); text-decoration: none; }
+  footer a { color: var(--accent-fg); text-decoration: none; font-weight: 500; }
+  footer a:hover { text-decoration: underline; }
+
   /* Full screen: drop every bit of chrome and give the page the whole window.
      Prev/Next stay in the banner and the keyboard shortcuts all still work. */
   body.fullscreen > header, body.fullscreen nav, body.fullscreen > footer { display: none; }
@@ -131,18 +212,54 @@
     max-width: 100%;
   }
   #btn-exit-full {
-    position: fixed; right: 14px; bottom: 14px; z-index: 5;
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
-    font-size: 14px; cursor: pointer; background: var(--panel); color: var(--muted);
-    box-shadow: 0 1px 8px rgba(0,0,0,.25); opacity: .85;
+    position: fixed; right: 14px; bottom: 14px; z-index: 5; padding: 8px 14px;
+    color: var(--muted); box-shadow: var(--shadow); opacity: .9;
   }
   #btn-exit-full:hover { opacity: 1; }
   body:not(.fullscreen) #btn-exit-full { display: none; }
+
+  /* Phones: three compact header rows (course + icon buttons, exam, modes), the
+     question grid as one scrolling strip, and the page across the full width. */
+  @media (max-width: 700px) {
+    header { gap: 8px; padding: 8px 12px; }
+    .brand { display: none; }
+    header select { flex: 1 1 0; min-width: 0; max-width: none; }
+    #course-select { order: 1; }
+    #btn-share, #btn-copy, #btn-full { order: 2; padding: 7px 10px; }
+    #btn-share { margin-left: auto; }
+    #btn-share .label, #btn-copy .label, #btn-full .label, .navbtn .label { display: none; }
+    #exam-select { order: 3; flex-basis: 100%; }
+    #toggle { order: 4; flex: 1; }
+    #toggle button { flex: 1; padding: 7px 0; }
+    #marks { order: 5; }
+    main { flex-direction: column; }
+    nav {
+      display: block; width: auto; padding: 8px 12px; overflow-x: auto; overflow-y: hidden;
+      border-right: 0; border-bottom: 1px solid var(--border);
+    }
+    #progress, .legend, .shortcuts { display: none; }
+    #qgrid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 40px; }
+    #viewer { padding: 10px; gap: 8px; }
+    #banner { gap: 8px; }
+    #status { flex: 1; min-width: 0; text-align: center; font-size: 13px; }
+    .navbtn { padding: 8px 14px; font-size: 15px; }
+    footer { padding: 4px 12px; font-size: 11px; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>📚 <span id="site-title">Exam Prep</span></h1>
+  <h1 class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <defs><linearGradient id="brand-g" x2="1" y2="1">
+        <stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+      </linearGradient></defs>
+      <rect width="32" height="32" rx="8" fill="url(#brand-g)"/>
+      <path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="#fff" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span id="site-title">Exam Prep</span>
+  </h1>
   <select id="course-select" title="Course" hidden></select>
   <select id="exam-select" title="Exam"></select>
   <span id="toggle">
@@ -151,29 +268,47 @@
   </span>
   <span id="marks">
     <button id="btn-done" title="mark as answered (D)">✓ Done</button>
-    <button id="btn-flag" title="flag as difficult (F)">⚑ Hard</button>
+    <button id="btn-flag" title="flag as difficult (H)">⚑ Hard</button>
   </span>
-  <button id="btn-share" title="copy a link to this question">🔗 Share</button>
-  <button id="btn-copy" title="copy question + answer as one image (C)">🖼️ Copy Q+A</button>
-  <button id="btn-full" title="fill the screen with the page (Z)">⛶ Full screen</button>
-  <span class="hint">Space: question/answer &nbsp;·&nbsp; ←/→: prev/next &nbsp;·&nbsp; D: done &nbsp;·&nbsp; F: hard &nbsp;·&nbsp; C: copy image &nbsp;·&nbsp; Z: full screen</span>
+  <button id="btn-share" title="copy a link to this question">🔗<span class="label"> Share</span></button>
+  <button id="btn-copy" title="copy question + answer as one image (C)">🖼️<span class="label"> Copy Q+A</span></button>
+  <button id="btn-full" title="fill the screen with the page (F)">⛶<span class="label"> Full screen</span></button>
 </header>
 <main>
   <nav>
-    <h2>Questions</h2>
+    <div id="progress">
+      <div class="progress-head"><h2>Questions</h2><span id="progress-count"></span></div>
+      <div class="progress-track"><div id="progress-fill"></div></div>
+    </div>
     <div id="qgrid"></div>
+    <div class="legend">
+      <span><i class="l-dot"></i>has answer</span>
+      <span><i class="l-done"></i>done</span>
+      <span><i class="l-flag"></i>hard</span>
+    </div>
+    <div class="shortcuts">
+      <h2>Shortcuts</h2>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>question / answer</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>prev / next</dd>
+        <dt><kbd>D</kbd></dt><dd>mark done</dd>
+        <dt><kbd>H</kbd></dt><dd>mark hard</dd>
+        <dt><kbd>C</kbd></dt><dd>copy Q+A image</dd>
+        <dt><kbd>F</kbd></dt><dd>full screen</dd>
+      </dl>
+    </div>
   </nav>
   <div id="viewer" tabindex="0">
     <div id="banner">
-      <button class="navbtn" id="prev-btn">← Prev</button>
+      <button class="navbtn" id="prev-btn" title="previous question">←<span class="label"> Prev</span></button>
       <span id="status">Loading…</span>
-      <button class="navbtn" id="next-btn">Next →</button>
+      <button class="navbtn" id="next-btn" title="next question"><span class="label">Next </span>→</button>
     </div>
     <img id="page-img" alt="" hidden>
     <p id="no-answer" hidden>No answer for this question</p>
   </div>
 </main>
-<button id="btn-exit-full" title="leave full screen (Z or Esc)">⤢ Exit full screen</button>
+<button id="btn-exit-full" title="leave full screen (F or Esc)">⤢ Exit full screen</button>
 <footer>This is a tool to help prepare for exams. Let me know what you think and if there are other courses you would like to use this for :) &nbsp;<a href="mailto:yehuda.shani@campus.technion.ac.il">yehuda.shani@campus.technion.ac.il</a></footer>
 <script>
 "use strict";
@@ -303,6 +438,11 @@ function optionLabel(exam) {
     " (" + doneCount(exam) + "/" + exam.questions.length + " ✓)";
 }
 
+function showProgress(done, total) {
+  $("progress-count").textContent = total ? done + " / " + total + " done" : "";
+  $("progress-fill").style.width = total ? (100 * done) / total + "%" : "0";
+}
+
 function refreshMarks() {
   const exam = currentExam();
   if (!exam) return;
@@ -314,6 +454,7 @@ function refreshMarks() {
   const m = markOf(exam.dir, state.n);
   $("btn-done").className = m.done ? "active-done" : "";
   $("btn-flag").className = m.flagged ? "active-flag" : "";
+  showProgress(doneCount(exam), exam.questions.length);
   const sel = $("exam-select");
   for (const opt of sel.options) {
     const e = exams.find((x) => x.dir === opt.value);
@@ -339,6 +480,7 @@ function show() {
     '<span class="mode-' + state.mode + '">' + label + " " + state.n + "</span>" +
     ' <span>· ' + exam.label + "</span>" +
     (state.mode === "q" && !hasAnswer(exam, state.n) ? " · <em>no answer</em>" : "");
+  $("viewer").classList.toggle("mode-a", state.mode === "a");
   $("btn-q").className = state.mode === "q" ? "active-q" : "";
   $("btn-a").className = state.mode === "a" ? "active-a" : "";
   const idx = exam.questions.indexOf(state.n);
@@ -347,6 +489,7 @@ function show() {
   for (const btn of $("qgrid").children) {
     btn.classList.toggle("current", Number(btn.dataset.n) === state.n);
   }
+  revealCurrent();
   // Preload the counterpart so toggling is instant.
   const other = state.mode === "q" ? "a" : "q";
   if (other === "q" || hasAnswer(exam, state.n)) {
@@ -357,6 +500,22 @@ function show() {
   // Every route into an exam ends here, so this is the one place worth counting.
   countView(state.course + "/" + state.exam, currentCourse().title + " · " + exam.label);
   refreshMarks();
+}
+
+// Scroll the question list just enough to show the current question: on phones
+// the list is a single row, so Prev/Next would otherwise walk off its edge.
+// Only the nav scrolls, never the page or the viewer.
+function revealCurrent() {
+  const nav = document.querySelector("nav");
+  const btn = $("qgrid").querySelector(".current");
+  if (!btn) return;
+  const n = nav.getBoundingClientRect();
+  const b = btn.getBoundingClientRect();
+  const pad = 12;
+  if (b.left < n.left + pad) nav.scrollLeft -= n.left + pad - b.left;
+  else if (b.right > n.right - pad) nav.scrollLeft += b.right - (n.right - pad);
+  if (b.top < n.top + pad) nav.scrollTop -= n.top + pad - b.top;
+  else if (b.bottom > n.bottom - pad) nav.scrollTop += b.bottom - (n.bottom - pad);
 }
 
 // Deep link: #<course>/<exam-dir>/<question>[/<q|a>], kept in sync by show().
@@ -499,6 +658,7 @@ function selectCourse(id) {
       state.exam = null;
       buildGrid();
       $("page-img").hidden = true;
+      showProgress(0, 0);
       $("status").textContent = "No exams available for this course yet.";
     }
   });
@@ -603,22 +763,27 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// Icon and text are kept apart so narrow screens can show the icon alone.
+function setLabel(btn, icon, text) {
+  btn.innerHTML = icon + '<span class="label"> ' + text + "</span>";
+}
+
 function copyQuestionAndAnswer() {
   const btn = $("btn-copy");
   const exam = currentExam();
   if (!exam || state.n === null || btn.disabled) return;
   const name = exam.dir + "-" + pad(state.n) + ".png";
-  const finish = (text, ok) => {
-    btn.textContent = text;
+  const finish = (icon, text, ok) => {
+    setLabel(btn, icon, text);
     btn.classList.toggle("copied", !!ok);
     btn.disabled = false;
     setTimeout(() => {
-      btn.textContent = "🖼️ Copy Q+A";
+      setLabel(btn, "🖼️", "Copy Q+A");
       btn.classList.remove("copied");
     }, 1800);
   };
   btn.disabled = true;
-  btn.textContent = "Copying…";
+  setLabel(btn, "⏳", "Copying…");
   // Safari only honours a clipboard write started in the click's own turn, so
   // the ClipboardItem is built here and handed the still-pending blob.
   const blob = combinedImage();
@@ -626,14 +791,14 @@ function copyQuestionAndAnswer() {
     ? navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
     : Promise.reject(new Error("clipboard images unsupported"));
   written
-    .then(() => finish("✓ Copied!", true))
+    .then(() => finish("✓", "Copied!", true))
     .catch(() =>
       blob
         .then((b) => {
           saveBlob(b, name);
-          finish("⬇ Saved image");
+          finish("⬇", "Saved image");
         })
-        .catch(() => finish("Copy failed"))
+        .catch(() => finish("⚠", "Copy failed"))
     );
 }
 
@@ -649,7 +814,7 @@ function browserFullscreen() {
 
 function applyFullscreen(on) {
   document.body.classList.toggle("fullscreen", on);
-  $("btn-full").textContent = on ? "⤢ Exit full screen" : "⛶ Full screen";
+  setLabel($("btn-full"), on ? "⤢" : "⛶", on ? "Exit full screen" : "Full screen");
 }
 
 function toggleFullscreen() {
@@ -679,10 +844,10 @@ $("btn-exit-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur()
 $("btn-share").onclick = (e) => {
   const btn = e.currentTarget;
   copyToClipboard(location.href)
-    .then(() => { btn.textContent = "✓ Copied!"; btn.classList.add("copied"); })
-    .catch(() => { btn.textContent = "Copy failed"; })
+    .then(() => { setLabel(btn, "✓", "Copied!"); btn.classList.add("copied"); })
+    .catch(() => { setLabel(btn, "⚠", "Copy failed"); })
     .then(() => setTimeout(() => {
-      btn.textContent = "🔗 Share";
+      setLabel(btn, "🔗", "Share");
       btn.classList.remove("copied");
     }, 1500));
   btn.blur();
@@ -695,9 +860,9 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowRight") step(1);
   else if (e.key === "ArrowLeft") step(-1);
   else if (e.code === "KeyD") toggleDone();
-  else if (e.code === "KeyF") toggleFlag();
+  else if (e.code === "KeyH") toggleFlag();
   else if (e.code === "KeyC") copyQuestionAndAnswer();
-  else if (e.code === "KeyZ") toggleFullscreen();
+  else if (e.code === "KeyF") toggleFullscreen();
   // Esc only reaches here when the layout is full screen without the browser
   // being — otherwise the browser eats it and fullscreenchange handles it.
   else if (e.key === "Escape" && document.body.classList.contains("fullscreen")) {
