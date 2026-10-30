@@ -1,8 +1,8 @@
 """Build a static study website from the split-exam directories.
 
 Renders every question/answer PDF to a PNG and emits a self-contained
-site that needs no server: progress is kept per-user in the browser's
-localStorage. One site can carry several courses, each in its own
+site with optional Supabase sign-in and private progress. Guest marks last
+only while the page is open. One site can carry several courses, each in its own
 subdirectory, and the viewer offers a course picker:
 
     site/index.html
@@ -28,6 +28,7 @@ import fitz
 from PIL import Image, ImageChops
 
 from .courses import ANALYTICS_CODE, SITE_TITLE, Course
+from .auth_config import auth_config
 from .courses import resolve as resolve_courses
 from .study_server import CONFIG_FLAG, expand_indexed_images, scan_exams
 
@@ -158,6 +159,7 @@ def build_course(course: Course, root: Path, out: Path, dpi: int) -> dict:
 
 
 def build(courses: list[Course], out: Path, dpi: int, *, base: Path) -> None:
+    auth = auth_config()
     page = Path(__file__).with_name("study.html").read_text(encoding="utf-8")
     if STATIC_FLAG not in page:
         raise SystemExit("study.html is missing the STATIC_SITE flag")
@@ -171,7 +173,7 @@ def build(courses: list[Course], out: Path, dpi: int, *, base: Path) -> None:
     ]
 
     config = json.dumps(
-        {"title": SITE_TITLE, "courses": entries, "analytics": ANALYTICS_CODE},
+        {"title": SITE_TITLE, "courses": entries, "analytics": ANALYTICS_CODE, "auth": auth},
         ensure_ascii=False,
         separators=(",", ":"),
     )

@@ -307,8 +307,8 @@ each sitting came out with.
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a
-display name, the directory of split exams, and the localStorage bucket its
-progress lives in. Both the viewer and the site build read it, so adding a
+display name, the directory of split exams, and a legacy storage key retained
+for compatibility. Both the viewer and the site build read it, so adding a
 course means adding one entry there (plus the split-exam directory).
 
 ```bash
@@ -319,6 +319,20 @@ python -m pdf_splitter.study_server --course physics3
 The viewer shows a course picker whenever more than one course is served, and
 each course keeps its own exam list, progress, and deep links
 (`#<course>/<exam>/<question>/<q|a>`).
+
+## Sign-in and personal progress
+
+The viewer supports Google sign-in and private progress through Supabase.
+Guests can mark questions during the current visit; a notice explains that
+these marks disappear on refresh or close. Signed-in users save each change
+immediately to their own database records. Saving failures show a retry notice.
+Old browser marks and shared local progress files are no longer used, and guest
+marks are not imported when signing in. Without Supabase configuration the
+viewer works in guest mode.
+
+See [the setup guide](docs/sign-in-setup.md) to create the database, configure
+Google, and connect the local viewer or static build. No hosted service is
+created or enabled by checking out this branch.
 
 Exams are listed newest sitting first, which means the semesters inside a year
 run backwards too — summer, then spring, then winter, the order they were

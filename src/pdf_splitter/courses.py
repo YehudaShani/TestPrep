@@ -2,7 +2,7 @@
 
 Each course is a directory of split exams (``question_NN.pdf`` /
 ``answer_NN.pdf`` per exam folder) plus the metadata the viewer needs to
-show it: a display name, the localStorage bucket its progress lives in,
+show it: a display name, a legacy storage key (no longer used for progress),
 and whether question crops must have their answer-color cues removed.
 
 Both the local server and the static site build take their course list

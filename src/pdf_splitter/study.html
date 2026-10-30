@@ -18,6 +18,7 @@
     --flag: #d97706; --flag-fg: #b45309; --flag-soft: rgba(217, 119, 6, .14);
     --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
     --shadow: 0 1px 3px rgba(16, 24, 40, .08), 0 10px 30px rgba(16, 24, 40, .08);
+    --danger: #dc2626;
     --page-filter: none;
   }
   @media (prefers-color-scheme: dark) {
@@ -33,6 +34,7 @@
       --shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
       /* Exam pages are white paper; take the glare off them at night. */
       --page-filter: brightness(.92);
+      --danger: #f87171;
     }
   }
   * { box-sizing: border-box; }
@@ -48,16 +50,26 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* ---- header ---- */
+  /* One row on desktop: the study controls shrink, then scroll sideways,
+     before the header ever wraps; labels drop to icons on narrower windows. */
   header {
-    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; padding: 10px 16px;
     background: var(--panel); border-bottom: 1px solid var(--border);
-    flex-wrap: wrap; position: relative; z-index: 1; box-shadow: var(--shadow-sm);
+    position: relative; z-index: 1; box-shadow: var(--shadow-sm);
   }
   .brand {
-    display: flex; align-items: center; gap: 10px; margin: 0 10px 0 0;
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin: 0 6px 0 0;
     font-size: 16px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap;
   }
   .brand svg { width: 30px; height: 30px; flex: none; }
+  .study-controls {
+    display: flex; align-items: center; flex: 1; min-width: 0;
+    gap: 8px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin;
+    /* Room inside the scroller for focus rings and shadows. */
+    padding: 3px; margin: -3px;
+  }
+  .study-controls > * { flex-shrink: 0; }
+  header button { white-space: nowrap; }
   select {
     height: 36px; padding: 0 10px; max-width: 340px;
     background-color: var(--panel); color: var(--text);
@@ -66,6 +78,7 @@
   }
   select:hover { border-color: var(--muted); }
   #course-select { font-weight: 650; }
+  .study-controls select { flex: 1 1 180px; width: 180px; min-width: 95px; max-width: 280px; }
   /* No background here: the select's background also paints the open popup,
      which would tint every row green, not just the completed ones. */
   select.complete { border-color: var(--answer); color: var(--answer-fg); font-weight: 650; }
@@ -82,26 +95,44 @@
     background: transparent; color: var(--muted); font-weight: 550;
     transition: background-color .15s, color .15s;
   }
-  #toggle button:hover, #marks button:hover { color: var(--text); background: var(--panel); }
+  #toggle button:hover:not(:disabled), #marks button:hover:not(:disabled) {
+    color: var(--text); background: var(--panel);
+  }
   #toggle button.active-q { background: var(--accent); color: var(--accent-text); box-shadow: var(--shadow-sm); }
   #toggle button.active-a { background: var(--answer); color: var(--accent-text); box-shadow: var(--shadow-sm); }
   #marks button.active-done { background: var(--answer); color: var(--accent-text); box-shadow: var(--shadow-sm); }
   #marks button.active-flag { background: var(--flag); color: var(--accent-text); box-shadow: var(--shadow-sm); }
-  #toggle button:disabled { opacity: .45; cursor: not-allowed; }
+  #toggle button:disabled, #marks button:disabled { opacity: .45; cursor: not-allowed; }
 
   #btn-share, #btn-copy, #btn-full, .navbtn, #btn-exit-full {
     border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px;
     cursor: pointer; background: var(--panel); color: var(--text); font-weight: 500;
     box-shadow: var(--shadow-sm); transition: background-color .15s, border-color .15s;
   }
-  #btn-share:hover, #btn-copy:hover, #btn-full:hover, .navbtn:hover:not(:disabled),
-  #btn-exit-full:hover {
+  #btn-share:hover, #btn-copy:hover:not(:disabled), #btn-full:hover,
+  .navbtn:hover:not(:disabled), #btn-exit-full:hover {
     background: var(--sunken); border-color: var(--border-strong);
   }
   #btn-share.copied, #btn-copy.copied {
     background: var(--answer); color: var(--accent-text); border-color: var(--answer);
   }
   #btn-copy:disabled { opacity: .5; cursor: default; }
+  #btn-sidebar { flex-shrink: 0; padding: 5px 10px; font-size: 17px; line-height: 1.2; }
+  #account { display: inline-flex; align-items: center; flex-shrink: 0; margin-left: auto; }
+  @media (max-width: 1200px) {
+    header .button-label { display: none; }
+    #marks button, #btn-share, #btn-copy, #btn-full { padding: 7px 10px; }
+  }
+  @media (max-width: 1000px) {
+    #site-title { display: none; }
+  }
+
+  #notice {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px;
+    background: var(--accent-soft); border-bottom: 1px solid var(--border);
+  }
+  #notice[hidden] { display: none; }
+  #notice-text { flex: 1; min-width: 0; }
 
   /* ---- question list ---- */
   main { flex: 1; display: flex; min-height: 0; }
@@ -111,6 +142,8 @@
     background: var(--panel); border-right: 1px solid var(--border);
     scrollbar-width: thin;
   }
+  nav[hidden] { display: none; }
+  nav > * { flex-shrink: 0; }
   nav h2 {
     font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
     color: var(--muted); margin: 0;
@@ -154,19 +187,48 @@
   .legend .l-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); opacity: .55; }
   .legend .l-done { background: var(--answer-soft); border: 1px solid var(--answer); }
   .legend .l-flag { background: var(--flag-soft); border: 1px solid var(--flag); }
-  .shortcuts { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
-  .shortcuts dl {
+  .sidebar-shortcuts { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+  .sidebar-shortcuts dl {
     display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center;
     margin: 8px 0 0; font-size: 12px; color: var(--muted);
   }
-  .shortcuts dt { white-space: nowrap; }
-  .shortcuts dd { margin: 0; }
+  .sidebar-shortcuts dt { white-space: nowrap; }
+  .sidebar-shortcuts dd { margin: 0; }
   kbd {
     display: inline-block; min-width: 20px; padding: 1px 5px; text-align: center;
     font: 600 11px/16px ui-monospace, SFMono-Regular, Consolas, monospace;
     color: var(--text); background: var(--sunken);
     border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 5px;
   }
+  #btn-request-courses {
+    width: 100%; padding: 9px 6px; font-size: 13px; font-weight: 600; white-space: nowrap;
+    background: var(--accent-soft); color: var(--accent-fg); border-color: transparent;
+    box-shadow: none;
+  }
+  #btn-request-courses:hover { background: var(--accent); color: var(--accent-text); }
+  .req-short { display: none; }
+
+  /* ---- course request dialog ---- */
+  #course-request-dialog {
+    width: min(420px, calc(100% - 32px)); padding: 24px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--panel); color: var(--text); box-shadow: var(--shadow);
+  }
+  #course-request-dialog::backdrop { background: rgba(15, 17, 23, .45); backdrop-filter: blur(2px); }
+  #course-request-dialog h2 { font-size: 18px; margin: 0 0 8px; }
+  #course-request-dialog p { color: var(--muted); margin: 0 0 18px; }
+  #course-request-dialog label { display: block; margin-bottom: 6px; font-weight: 550; }
+  #course-request-name {
+    width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border-strong);
+    border-radius: 8px; background: var(--panel); color: var(--text); font: inherit;
+  }
+  #course-request-name:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #course-request-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  #course-request-submit, #course-request-sign-in {
+    background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+  }
+  #course-request-submit:hover:not(:disabled), #course-request-sign-in:hover { filter: brightness(1.1); }
+  #course-request-error { margin-top: 10px; font-size: 13px; color: var(--danger); }
 
   /* ---- page viewer ---- */
   #viewer {
@@ -218,37 +280,49 @@
   #btn-exit-full:hover { opacity: 1; }
   body:not(.fullscreen) #btn-exit-full { display: none; }
 
-  /* Phones: three compact header rows (course + icon buttons, exam, modes), the
-     question grid as one scrolling strip, and the page across the full width. */
+  /* Phones: the header wraps into three rows (sidebar, course, account / exam
+     and icon buttons / modes), the question grid becomes one scrolling strip
+     with the course-request button pinned beside it, and the page takes the
+     full width. The flex bases below decide where the rows break. */
   @media (max-width: 700px) {
-    header { gap: 8px; padding: 8px 12px; }
+    header { flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
     .brand { display: none; }
-    header select { flex: 1 1 0; min-width: 0; max-width: none; }
-    #course-select { order: 1; }
-    #btn-share, #btn-copy, #btn-full { order: 2; padding: 7px 10px; }
-    #btn-share { margin-left: auto; }
-    #btn-share .label, #btn-copy .label, #btn-full .label, .navbtn .label { display: none; }
-    #exam-select { order: 3; flex-basis: 100%; }
-    #toggle { order: 4; flex: 1; }
+    .study-controls { display: contents; }
+    header select { flex: 1 1 150px; width: auto; min-width: 0; max-width: none; }
+    #btn-sidebar { order: 1; }
+    #course-select { order: 2; }
+    #account { order: 3; margin-left: 0; }
+    #exam-select { order: 4; flex-basis: 160px; }
+    #btn-share, #btn-copy, #btn-full { order: 5; }
+    #toggle { order: 6; flex: 1; }
     #toggle button { flex: 1; padding: 7px 0; }
-    #marks { order: 5; }
+    #marks { order: 7; }
+    .navbtn .label { display: none; }
     main { flex-direction: column; }
     nav {
-      display: block; width: auto; padding: 8px 12px; overflow-x: auto; overflow-y: hidden;
+      flex-direction: row; align-items: center; gap: 8px; width: auto;
+      padding: 8px 12px; overflow: visible;
       border-right: 0; border-bottom: 1px solid var(--border);
     }
-    #progress, .legend, .shortcuts { display: none; }
-    #qgrid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 40px; }
+    #progress, .legend, .sidebar-shortcuts { display: none; }
+    #qgrid {
+      flex: 1; min-width: 0; padding: 2px; overflow-x: auto; scrollbar-width: none;
+      grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 40px;
+    }
+    #btn-request-courses { width: auto; padding: 9px 12px; }
+    .req-long { display: none; }
+    .req-short { display: inline; }
     #viewer { padding: 10px; gap: 8px; }
     #banner { gap: 8px; }
     #status { flex: 1; min-width: 0; text-align: center; font-size: 13px; }
-    .navbtn { padding: 8px 14px; font-size: 15px; }
+    #banner .navbtn { padding: 8px 14px; font-size: 15px; }
     footer { padding: 4px 12px; font-size: 11px; }
   }
 </style>
 </head>
 <body>
 <header>
+  <button class="navbtn" id="btn-sidebar" aria-controls="question-sidebar" aria-expanded="true" aria-label="Hide question sidebar" title="Hide question sidebar">☰</button>
   <h1 class="brand">
     <svg viewBox="0 0 32 32" aria-hidden="true">
       <defs><linearGradient id="brand-g" x2="1" y2="1">
@@ -260,6 +334,7 @@
     </svg>
     <span id="site-title">Exam Prep</span>
   </h1>
+  <div class="study-controls">
   <select id="course-select" title="Course" hidden></select>
   <select id="exam-select" title="Exam"></select>
   <span id="toggle">
@@ -267,15 +342,25 @@
     <button id="btn-a">Answer</button>
   </span>
   <span id="marks">
-    <button id="btn-done" title="mark as answered (D)">✓ Done</button>
-    <button id="btn-flag" title="flag as difficult (H)">⚑ Hard</button>
+    <button id="btn-done" title="mark as answered (D)" aria-label="Done">✓<span class="button-label"> Done</span></button>
+    <button id="btn-flag" title="flag as difficult (H)" aria-label="Hard">⚑<span class="button-label"> Hard</span></button>
   </span>
-  <button id="btn-share" title="copy a link to this question">🔗<span class="label"> Share</span></button>
-  <button id="btn-copy" title="copy question + answer as one image (C)">🖼️<span class="label"> Copy Q+A</span></button>
-  <button id="btn-full" title="fill the screen with the page (F)">⛶<span class="label"> Full screen</span></button>
+  <button id="btn-share" aria-label="Share" title="copy a link to this question">🔗<span class="button-label"> Share</span></button>
+  <button id="btn-copy" aria-label="Copy question and answer" title="copy question + answer as one image (C)">🖼️<span class="button-label"> Copy Q+A</span></button>
+  <button id="btn-full" aria-label="Full screen" title="fill the screen with the page (F)">⛶<span class="button-label"> Full screen</span></button>
+  </div>
+  <span id="account">
+    <button class="navbtn" id="btn-sign-in" aria-label="Sign in with Google" disabled>Sign in<span class="button-label"> with Google</span></button>
+    <button class="navbtn" id="btn-sign-out" hidden>Sign out</button>
+  </span>
 </header>
+<div id="notice" role="status" aria-live="polite" hidden>
+  <span id="notice-text"></span>
+  <button class="navbtn" id="notice-action" hidden></button>
+  <button class="navbtn" id="notice-dismiss" aria-label="Dismiss notice">Dismiss</button>
+</div>
 <main>
-  <nav>
+  <nav id="question-sidebar" aria-label="Questions">
     <div id="progress">
       <div class="progress-head"><h2>Questions</h2><span id="progress-count"></span></div>
       <div class="progress-track"><div id="progress-fill"></div></div>
@@ -286,17 +371,19 @@
       <span><i class="l-done"></i>done</span>
       <span><i class="l-flag"></i>hard</span>
     </div>
-    <div class="shortcuts">
-      <h2>Shortcuts</h2>
+    <section class="sidebar-shortcuts" aria-labelledby="shortcuts-title">
+      <h2 id="shortcuts-title">Shortcuts</h2>
       <dl>
-        <dt><kbd>Space</kbd></dt><dd>question / answer</dd>
-        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>prev / next</dd>
-        <dt><kbd>D</kbd></dt><dd>mark done</dd>
-        <dt><kbd>H</kbd></dt><dd>mark hard</dd>
-        <dt><kbd>C</kbd></dt><dd>copy Q+A image</dd>
-        <dt><kbd>F</kbd></dt><dd>full screen</dd>
+        <dt><kbd>Space</kbd></dt><dd>Question / answer</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next</dd>
+        <dt><kbd>D</kbd></dt><dd>Mark done</dd>
+        <dt><kbd>H</kbd></dt><dd>Mark hard</dd>
+        <dt><kbd>C</kbd></dt><dd>Copy Q+A image</dd>
+        <dt><kbd>F</kbd></dt><dd>Full screen</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Exit full screen</dd>
       </dl>
-    </div>
+    </section>
+    <button class="navbtn" id="btn-request-courses" title="Request another course" aria-label="Request another course" aria-haspopup="dialog"><span class="req-long">＋ Request another course</span><span class="req-short">＋ Course</span></button>
   </nav>
   <div id="viewer" tabindex="0">
     <div id="banner">
@@ -308,12 +395,28 @@
     <p id="no-answer" hidden>No answer for this question</p>
   </div>
 </main>
+<dialog id="course-request-dialog" aria-labelledby="course-request-title" aria-describedby="course-request-description">
+  <form id="course-request-form">
+    <h2 id="course-request-title">Request another course</h2>
+    <p id="course-request-description">Enter one course name per request. You can request up to three courses in total.</p>
+    <div id="course-request-fields">
+      <label for="course-request-name">Name of one course</label>
+      <input id="course-request-name" name="course" type="text" required minlength="2" maxlength="160" autocomplete="off" autofocus placeholder="e.g. Linear Algebra">
+    </div>
+    <div id="course-request-error" role="alert" hidden></div>
+    <div class="dialog-actions">
+      <button class="navbtn" id="course-request-cancel" type="button">Cancel</button>
+      <button class="navbtn" id="course-request-submit" type="submit">Send request</button>
+      <button class="navbtn" id="course-request-sign-in" type="button" hidden>Sign in with Google</button>
+    </div>
+  </form>
+</dialog>
 <button id="btn-exit-full" title="leave full screen (F or Esc)">⤢ Exit full screen</button>
 <footer>This is a tool to help prepare for exams. Let me know what you think and if there are other courses you would like to use this for :) &nbsp;<a href="mailto:yehuda.shani@campus.technion.ac.il">yehuda.shani@campus.technion.ac.il</a></footer>
 <script>
 "use strict";
 // Flipped to true by build_site.py: images and exams.json are then static
-// files and progress lives in each visitor's localStorage.
+// files. Progress is private to signed-in users; guest marks live in memory.
 window.STATIC_SITE = false;
 window.STUDY_CONFIG = {"title":"Exam Prep","courses":[{"id":"circuits","title":"Electrical Circuits","storageKey":"study-progress","assetVersion":""}]};
 const STATIC = window.STATIC_SITE;
@@ -322,10 +425,22 @@ const COURSES = CONFIG.courses;
 // Which course the visitor last studied; their marks stay per course.
 const COURSE_KEY = "study-course";
 let exams = [];
-let progress = {};
+let progress = Object.create(null);
 let state = { course: COURSES[0].id, exam: null, n: null, mode: "q" };
-const examCache = {};
-const progressCache = {};
+const examCache = Object.create(null);
+const progressCache = Object.create(null);
+let client = null;
+let user = null;
+let authReady = false;
+let accountEpoch = 0;
+let courseRequest = 0;
+let marksReady = false;
+let guestNoticeShown = false;
+let noticeKind = "";
+let requestSubmitting = false;
+let requestGeneration = 0;
+let writeQueue = Promise.resolve();
+const pendingWrites = new Map();
 
 // Visit counting, enabled only when the static build passes a GoatCounter
 // site code (see courses.py) — the local server never does. count.js records
@@ -363,6 +478,231 @@ $("site-title").textContent = CONFIG.title;
 const pad = (n) => String(n).padStart(2, "0");
 const fileFor = (mode, n) => (mode === "q" ? "question_" : "answer_") + pad(n) + ".pdf";
 
+$("btn-sidebar").onclick = () => {
+  const sidebar = $("question-sidebar");
+  sidebar.hidden = !sidebar.hidden;
+  const button = $("btn-sidebar");
+  button.setAttribute("aria-expanded", String(!sidebar.hidden));
+  const label = sidebar.hidden ? "Show question sidebar" : "Hide question sidebar";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+};
+
+function notice(kind, text, action, label) {
+  noticeKind = kind;
+  $("notice-text").textContent = text;
+  $("notice-action").hidden = !action;
+  $("notice-action").textContent = label || "";
+  $("notice-action").onclick = action || null;
+  $("notice").hidden = false;
+}
+
+function enableMarks(ready) {
+  marksReady = ready;
+  $("btn-done").disabled = !ready;
+  $("btn-flag").disabled = !ready;
+}
+
+async function signIn() {
+  if (!client || !authReady) {
+    notice("auth", "Sign-in is not available yet. You can still browse and try marking questions.");
+    return;
+  }
+  // PKCE uses the query string for its return code, leaving question deep links intact.
+  const redirect = new URL(location.href);
+  redirect.search = "";
+  const { error } = await client.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: redirect.href,
+      queryParams: { prompt: "select_account" },
+    },
+  }).catch(() => ({ error: true }));
+  if (error) notice("auth", "Couldn’t open Google sign-in. Please try again.", signIn, "Try again");
+}
+
+function retryWrites() {
+  for (const [key, item] of pendingWrites) enqueueWrite(key, item);
+}
+
+function enqueueWrite(key, item) {
+  const epoch = accountEpoch;
+  // Serialize writes so rapid toggles cannot arrive in the opposite order.
+  writeQueue = writeQueue.then(async () => {
+    if (epoch !== accountEpoch || pendingWrites.get(key) !== item) return;
+    try {
+      const { error } = await client.from("question_progress").upsert(item, {
+        onConflict: "user_id,course_id,exam_id,question_number",
+      });
+      if (error) throw error;
+      if (epoch !== accountEpoch) return;
+      if (pendingWrites.get(key) === item) pendingWrites.delete(key);
+      if (!pendingWrites.size && noticeKind === "save") $("notice").hidden = true;
+    } catch (err) {
+      if (epoch === accountEpoch) notice("save",
+        "Some changes haven’t been saved. Keep this page open and retry when you’re connected.",
+        retryWrites, "Retry saving");
+    }
+  });
+}
+
+async function setAccount(session) {
+  const next = session ? session.user : null;
+  if (authReady && (next && next.id) === (user && user.id)) return;
+  authReady = true;
+  user = next;
+  requestGeneration++;
+  requestSubmitting = false;
+  if ($("course-request-dialog").open) $("course-request-dialog").close();
+  accountEpoch++;
+  courseRequest++;
+  pendingWrites.clear();
+  for (const id of Object.keys(progressCache)) delete progressCache[id];
+  progress = Object.create(null);
+  refreshMarks();
+  enableMarks(false);
+  $("notice").hidden = true;
+  $("btn-sign-in").hidden = !!user;
+  $("btn-sign-in").disabled = !client;
+  $("btn-sign-out").hidden = !user;
+}
+
+async function initializeAuth() {
+  enableMarks(false);
+  const settings = CONFIG.auth;
+  if (!settings || !settings.url || !settings.publishableKey) {
+    await setAccount(null);
+    $("btn-sign-in").disabled = false;
+    return;
+  }
+  try {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      const timeout = setTimeout(() => reject(new Error("Sign-in timed out")), 10000);
+      script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js";
+      script.onload = () => { clearTimeout(timeout); resolve(); };
+      script.onerror = () => { clearTimeout(timeout); reject(new Error("Sign-in unavailable")); };
+      document.head.appendChild(script);
+    });
+    client = window.supabase.createClient(settings.url, settings.publishableKey, {
+      auth: { flowType: "pkce", persistSession: true, detectSessionInUrl: true },
+    });
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    await setAccount(data.session);
+    client.auth.onAuthStateChange((_event, session) => {
+      // Do not call async Supabase methods inside the SDK's auth callback lock.
+      setTimeout(async () => {
+        const id = session && session.user.id;
+        if (id === (user && user.id)) return;
+        await setAccount(session);
+        await reloadAccountProgress();
+      }, 0);
+    });
+  } catch (err) {
+    client = null;
+    await setAccount(null);
+    $("btn-sign-in").disabled = false;
+    notice("auth", "Sign-in couldn’t load. Refresh to try again. You can still browse; guest marks won’t be saved.");
+  }
+}
+
+async function reloadAccountProgress() {
+  const target = { ...state };
+  const loaded = await loadCourse(target.course);
+  if (!loaded || state.course !== target.course) return;
+  selectExam(exams.some((e) => e.dir === target.exam) ? target.exam : (exams[0] || {}).dir);
+  if (currentExam() && currentExam().questions.includes(target.n)) selectQuestion(target.n, target.mode);
+}
+
+$("btn-sign-in").onclick = signIn;
+$("btn-request-courses").onclick = () => {
+  if (requestSubmitting) return;
+  const canRequest = !!user && !!client;
+  requestGeneration++;
+  $("course-request-form").reset();
+  $("course-request-error").hidden = true;
+  $("course-request-submit").disabled = false;
+  $("course-request-submit").textContent = "Send request";
+  $("course-request-cancel").disabled = false;
+  $("course-request-description").textContent = canRequest
+    ? "Enter one course name per request. You can request up to three courses in total."
+    : "Requesting another course requires sign-in.";
+  $("course-request-fields").hidden = !canRequest;
+  $("course-request-submit").hidden = !canRequest;
+  $("course-request-sign-in").hidden = canRequest;
+  $("course-request-dialog").showModal();
+  (canRequest ? $("course-request-name") : $("course-request-sign-in")).focus();
+};
+$("course-request-sign-in").onclick = async () => {
+  $("course-request-dialog").close();
+  await signIn();
+};
+$("course-request-cancel").onclick = () => $("course-request-dialog").close();
+$("course-request-dialog").addEventListener("cancel", (event) => {
+  if (requestSubmitting) event.preventDefault();
+});
+$("course-request-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!user || !client || requestSubmitting) return;
+  const courseName = $("course-request-name").value.trim();
+  const errorBox = $("course-request-error");
+  if (courseName.length < 2 || courseName.length > 160) {
+    errorBox.textContent = "Enter a course name between 2 and 160 characters.";
+    errorBox.hidden = false;
+    $("course-request-name").focus();
+    return;
+  }
+  const generation = requestGeneration;
+  requestSubmitting = true;
+  $("course-request-submit").disabled = true;
+  $("course-request-submit").textContent = "Sending…";
+  $("course-request-cancel").disabled = true;
+  errorBox.hidden = true;
+  try {
+    const { error } = await client.from("course_requests").insert({ user_id: user.id, course_name: courseName });
+    if (error) throw error;
+    if (generation !== requestGeneration) return;
+    $("course-request-dialog").close();
+    notice("request", "Thanks—your course request was sent.");
+  } catch (error) {
+    if (generation !== requestGeneration) return;
+    if (error.code === "P0001" && error.message === "course_request_limit_reached") {
+      errorBox.textContent = "You’ve reached the limit of three course requests.";
+    } else {
+      errorBox.textContent = error.code === "23505"
+        ? "You’ve already requested this course."
+        : "Couldn’t send your request. Please try again.";
+    }
+    errorBox.hidden = false;
+  } finally {
+    if (generation === requestGeneration) {
+      requestSubmitting = false;
+      $("course-request-submit").disabled = false;
+      $("course-request-submit").textContent = "Send request";
+      $("course-request-cancel").disabled = false;
+    }
+  }
+};
+$("notice-dismiss").onclick = () => { $("notice").hidden = true; };
+$("btn-sign-out").onclick = async () => {
+  if (pendingWrites.size) {
+    notice("save", "Please save your pending changes before signing out.", retryWrites, "Retry saving");
+    return;
+  }
+  $("btn-sign-out").disabled = true;
+  const { error } = await client.auth.signOut({ scope: "local" }).catch(() => ({ error: true }));
+  $("btn-sign-out").disabled = false;
+  if (error) notice("auth", "Couldn’t sign out. Please try again.");
+  else if (user) { await setAccount(null); await reloadAccountProgress(); }
+};
+window.addEventListener("online", retryWrites);
+window.addEventListener("beforeunload", (event) => {
+  if (!pendingWrites.size && !requestSubmitting) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 function currentCourse() {
   return COURSES.find((c) => c.id === state.course) || COURSES[0];
 }
@@ -395,20 +735,22 @@ function markOf(dir, n) {
 function saveMark(done, flagged) {
   const dir = state.exam;
   const n = state.n;
-  if (!dir || n === null) return;
+  if (!marksReady || !dir || n === null) return;
   if (done || flagged) {
-    (progress[dir] = progress[dir] || {})[n] = { done, flagged };
+    (progress[dir] = progress[dir] || Object.create(null))[n] = { done, flagged };
   } else if (progress[dir]) {
     delete progress[dir][n];
   }
-  if (STATIC) {
-    localStorage.setItem(currentCourse().storageKey, JSON.stringify(progress));
-  } else {
-    fetch("/api/progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: state.course, exam: dir, n, done, flagged }),
-    });
+  if (user) {
+    const item = { user_id: user.id, course_id: state.course, exam_id: dir,
+      question_number: n, done, flagged };
+    const key = JSON.stringify([state.course, dir, n]);
+    pendingWrites.set(key, item);
+    enqueueWrite(key, item);
+  } else if (!guestNoticeShown) {
+    guestNoticeShown = true;
+    notice("guest", "These marks won’t be saved after you refresh or leave. Sign in to save future progress. Guest marks won’t transfer.",
+      signIn, "Sign in with Google");
   }
   refreshMarks();
 }
@@ -503,17 +845,20 @@ function show() {
 }
 
 // Scroll the question list just enough to show the current question: on phones
-// the list is a single row, so Prev/Next would otherwise walk off its edge.
-// Only the nav scrolls, never the page or the viewer.
+// the grid is a single sideways row, so Prev/Next would otherwise walk off its
+// edge; on desktop the sidebar scrolls down. Only those two ever scroll here,
+// never the page or the viewer.
 function revealCurrent() {
-  const nav = document.querySelector("nav");
-  const btn = $("qgrid").querySelector(".current");
-  if (!btn) return;
-  const n = nav.getBoundingClientRect();
-  const b = btn.getBoundingClientRect();
+  const grid = $("qgrid");
+  const nav = $("question-sidebar");
+  const btn = grid.querySelector(".current");
+  if (!btn || nav.hidden) return;
   const pad = 12;
-  if (b.left < n.left + pad) nav.scrollLeft -= n.left + pad - b.left;
-  else if (b.right > n.right - pad) nav.scrollLeft += b.right - (n.right - pad);
+  const b = btn.getBoundingClientRect();
+  const g = grid.getBoundingClientRect();
+  if (b.left < g.left + pad) grid.scrollLeft -= g.left + pad - b.left;
+  else if (b.right > g.right - pad) grid.scrollLeft += b.right - (g.right - pad);
+  const n = nav.getBoundingClientRect();
   if (b.top < n.top + pad) nav.scrollTop -= n.top + pad - b.top;
   else if (b.bottom > n.bottom - pad) nav.scrollTop += b.bottom - (n.bottom - pad);
 }
@@ -547,7 +892,8 @@ function applyHash() {
   if (!target || !COURSES.some((c) => c.id === target.course)) {
     return Promise.resolve(false);
   }
-  return loadCourse(target.course).then(() => {
+  return loadCourse(target.course).then((loaded) => {
+    if (!loaded) return true;
     const exam = exams.find((e) => e.dir === target.dir);
     if (!exam || !exam.questions.includes(target.n)) {
       selectExam(exams.length ? exams[0].dir : null);
@@ -615,30 +961,45 @@ function fetchExams(id) {
   return fetch(url).then((r) => r.json()).then((data) => (examCache[id] = data));
 }
 
-function fetchProgress(id) {
+async function fetchProgress(id) {
   if (progressCache[id]) return Promise.resolve(progressCache[id]);
-  if (!STATIC) {
-    return fetch("/api/progress?course=" + encodeURIComponent(id))
-      .then((r) => r.json())
-      .then((data) => (progressCache[id] = data));
+  const epoch = accountEpoch;
+  const stored = Object.create(null);
+  if (user) {
+    // Page through results: Supabase caps a single response at 1,000 rows.
+    for (let start = 0; ; start += 1000) {
+      const { data, error } = await client.from("question_progress")
+        .select("exam_id,question_number,done,flagged")
+        .eq("user_id", user.id).eq("course_id", id)
+        .order("exam_id").order("question_number").range(start, start + 999);
+      if (epoch !== accountEpoch) throw new Error("Account changed");
+      if (error) throw error;
+      for (const row of data) {
+        (stored[row.exam_id] ||= Object.create(null))[row.question_number] = { done: row.done, flagged: row.flagged };
+      }
+      if (data.length < 1000) break;
+    }
   }
-  const course = COURSES.find((c) => c.id === id);
-  let stored = {};
-  try {
-    stored = JSON.parse(localStorage.getItem(course.storageKey) || "{}");
-  } catch (err) {
-    stored = {};
-  }
-  return Promise.resolve((progressCache[id] = stored));
+  return (progressCache[id] = stored);
 }
 
 // Each course keeps its own exam list and its own marks; both are fetched
 // once and then cached, so switching back and forth is instant.
 function loadCourse(id) {
-  return Promise.all([fetchExams(id), fetchProgress(id)]).then(([data, prog]) => {
+  const request = ++courseRequest;
+  const epoch = accountEpoch;
+  enableMarks(false);
+  return Promise.all([fetchExams(id), fetchProgress(id).then(
+    (data) => ({ data }), (error) => ({ error })
+  )]).then(([data, result]) => {
+    if (epoch !== accountEpoch || request !== courseRequest) return false;
     state.course = id;
     exams = data;
-    progress = prog;
+    progress = result.data || {};
+    enableMarks(!result.error);
+    if (result.error) notice("load", "Couldn’t load your saved progress. Marking is paused until it loads.",
+      reloadAccountProgress, "Retry loading");
+    else if (noticeKind === "load") $("notice").hidden = true;
     $("course-select").value = id;
     document.title =
       (COURSES.length > 1 ? currentCourse().title + " · " : "") + CONFIG.title;
@@ -648,11 +1009,13 @@ function loadCourse(id) {
       /* private browsing: remembering the course is optional */
     }
     fillExamSelect();
+    return true;
   });
 }
 
 function selectCourse(id) {
-  return loadCourse(id).then(() => {
+  return loadCourse(id).then((loaded) => {
+    if (!loaded) return;
     if (exams.length) selectExam(exams[0].dir);
     else {
       state.exam = null;
@@ -763,9 +1126,13 @@ function saveBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-// Icon and text are kept apart so narrow screens can show the icon alone.
-function setLabel(btn, icon, text) {
-  btn.innerHTML = icon + '<span class="label"> ' + text + "</span>";
+function toolLabel(button, icon, label) {
+  button.textContent = icon;
+  const text = document.createElement("span");
+  text.className = "button-label";
+  text.textContent = " " + label;
+  button.appendChild(text);
+  button.setAttribute("aria-label", label);
 }
 
 function copyQuestionAndAnswer() {
@@ -774,16 +1141,16 @@ function copyQuestionAndAnswer() {
   if (!exam || state.n === null || btn.disabled) return;
   const name = exam.dir + "-" + pad(state.n) + ".png";
   const finish = (icon, text, ok) => {
-    setLabel(btn, icon, text);
+    toolLabel(btn, icon, text);
     btn.classList.toggle("copied", !!ok);
     btn.disabled = false;
     setTimeout(() => {
-      setLabel(btn, "🖼️", "Copy Q+A");
+      toolLabel(btn, "🖼️", "Copy Q+A");
       btn.classList.remove("copied");
     }, 1800);
   };
   btn.disabled = true;
-  setLabel(btn, "⏳", "Copying…");
+  toolLabel(btn, "⏳", "Copying…");
   // Safari only honours a clipboard write started in the click's own turn, so
   // the ClipboardItem is built here and handed the still-pending blob.
   const blob = combinedImage();
@@ -814,7 +1181,7 @@ function browserFullscreen() {
 
 function applyFullscreen(on) {
   document.body.classList.toggle("fullscreen", on);
-  setLabel($("btn-full"), on ? "⤢" : "⛶", on ? "Exit full screen" : "Full screen");
+  toolLabel($("btn-full"), on ? "⤢" : "⛶", on ? "Exit full screen" : "Full screen");
 }
 
 function toggleFullscreen() {
@@ -844,10 +1211,10 @@ $("btn-exit-full").onclick = (e) => { toggleFullscreen(); e.currentTarget.blur()
 $("btn-share").onclick = (e) => {
   const btn = e.currentTarget;
   copyToClipboard(location.href)
-    .then(() => { setLabel(btn, "✓", "Copied!"); btn.classList.add("copied"); })
-    .catch(() => { setLabel(btn, "⚠", "Copy failed"); })
+    .then(() => { toolLabel(btn, "✓", "Copied!"); btn.classList.add("copied"); })
+    .catch(() => { toolLabel(btn, "⚠", "Copy failed"); })
     .then(() => setTimeout(() => {
-      setLabel(btn, "🔗", "Share");
+      toolLabel(btn, "🔗", "Share");
       btn.classList.remove("copied");
     }, 1500));
   btn.blur();
@@ -855,7 +1222,8 @@ $("btn-share").onclick = (e) => {
 window.addEventListener("hashchange", applyHash);
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+  if ($("course-request-dialog").open || ["SELECT", "INPUT", "TEXTAREA"].includes(e.target.tagName)
+      || e.target.isContentEditable || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === "Space") { e.preventDefault(); toggleMode(); }
   else if (e.key === "ArrowRight") step(1);
   else if (e.key === "ArrowLeft") step(-1);
@@ -889,7 +1257,10 @@ const initialCourse = COURSES.some((c) => c.id === remembered)
   ? remembered
   : COURSES[0].id;
 
-applyHash().then((handled) => (handled ? null : selectCourse(initialCourse)));
+initializeAuth()
+  .then(() => applyHash())
+  .then((handled) => (handled ? null : selectCourse(initialCourse)))
+  .catch(() => notice("load", "Couldn’t load the questions. Refresh to try again."));
 </script>
 </body>
 </html>
