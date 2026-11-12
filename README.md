@@ -304,6 +304,28 @@ empty page, and the 2016 Moed A paper closes with a "פתרון המבחן" cove
 question 3 with nothing under it. `FluidsSplit/fluids-report.json` says what
 each sitting came out with.
 
+## Partial Differential Equations collection
+
+Twelve sittings of Partial Differential Equations M (104228), 2016-2024, plus
+a sheet of eight exercises from past exams: 66 questions and 45 answers.
+
+Unlike the other collections this one was cut by hand. The papers are in
+`differential equations/`, and every question and answer boundary is written
+out as a `(page, y)` heading position in `PDESplit/split_by_hand.py`, which is
+kept only as the record of where the cuts are; each crop was checked against
+its source page.
+
+The 2022 and 2023 papers state each question and work it out under its own
+"פתרון" / "Solution:". The 2020 papers come with a page of final answers
+rather than worked solutions, and their bonus question has none. The 2016 and
+2024 papers and the exercise sheet are questions only. The 2016 paper is filed
+under 2015 but dated Spring תשע"ו; the 2024 paper numbers two questions
+"Question 3", which are questions 3 and 4 here. Homework questions (2020
+question 2, 2023 Winter Moed A question 1, 2023 Winter Moed B question 2) are
+answered only by a pointer to the homework solution, and the last of these
+does not state the question either. `PDESplit/pde-report.json` says what each
+sitting came out with.
+
 ## Courses
 
 `src/pdf_splitter/courses.py` is the single registry of courses: an id, a
